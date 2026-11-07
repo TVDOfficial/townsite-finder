@@ -486,7 +486,7 @@ export default function Planner() {
             <Link href={`/?lat=${plan.lat}&lng=${plan.lng}&size=${plan.size}`} className="glass flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium hover:bg-white/20">
               <ArrowLeft size={16} /> Back
             </Link>
-            <div className="glass flex items-center gap-2 rounded-xl px-3 py-1.5">
+            <div className="glass relative flex items-center gap-2 rounded-xl px-3 py-1.5">
               <div>
                 <input
                   value={plan.name} onChange={(e) => setPlan((p) => p && { ...p, name: e.target.value })} placeholder="Name your town" maxLength={40}
@@ -495,7 +495,7 @@ export default function Planner() {
                 <div className="font-mono text-[10px] text-white/55">{plan.lat.toFixed(4)}, {plan.lng.toFixed(4)} · {Math.round(terrain.baseElevation)} m</div>
               </div>
               <AnimatePresence>
-                {saved && <motion.span initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1 text-[11px] text-emerald-300"><Check size={12} /> Saved</motion.span>}
+                {saved && <motion.span initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="absolute -bottom-2 right-2 flex items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"><Check size={10} /> Saved</motion.span>}
               </AnimatePresence>
             </div>
             <div className="glass flex items-center gap-2 rounded-xl px-3 py-2">
