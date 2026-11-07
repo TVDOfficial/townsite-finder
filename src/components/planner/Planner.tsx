@@ -109,8 +109,8 @@ export default function Planner() {
   useEffect(() => {
     if (!plan) return;
     const q = `lat=${plan.lat.toFixed(4)}&lng=${plan.lng.toFixed(4)}`;
-    fetch(`/api/spot?${q}`).then((r) => r.json()).then((d) => !d.error && setSite(d)).catch(() => {});
-    fetch(`/api/nearby?${q}`).then((r) => r.json()).then((d) => !d.error && setNearby(d)).catch(() => {});
+    fetch(`/api/spot?${q}&v=2`).then((r) => r.json()).then((d) => !d.error && setSite(d)).catch(() => {});
+    fetch(`/api/nearby?${q}&v=2`).then((r) => r.json()).then((d) => !d.error && setNearby(d)).catch(() => {});
   }, [location]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Default town boundary: a square big enough for the chosen town size

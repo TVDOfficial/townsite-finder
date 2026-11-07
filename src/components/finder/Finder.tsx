@@ -44,13 +44,13 @@ export default function Finder() {
     setNearby(null);
     setNearbyLoading(true);
     const q = `lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`;
-    fetch(`/api/nearby?${q}`)
+    fetch(`/api/nearby?${q}&v=2`)
       .then((r) => r.json())
       .then((n: NearbyDetails) => { if (id === reqId.current) setNearby(n); })
       .catch(() => {})
       .finally(() => { if (id === reqId.current) setNearbyLoading(false); });
     try {
-      const r = await fetch(`/api/spot?${q}`);
+      const r = await fetch(`/api/spot?${q}&v=2`);
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "Couldn't load this spot");
       if (id === reqId.current) setDetails(j);
