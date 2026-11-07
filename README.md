@@ -2,9 +2,12 @@
 
 Find a random spot in Australia that's well away from existing towns, see what it would take to build a town there, then plan it in 3D.
 
+**Live site:** https://townsite-finder.vercel.app
+
 ## Features
 
 - **Finder** (`/`): pick a state and a minimum distance from towns, then hit *Find me a spot*. Rejected points flash on the map before it flies to the winner.
+- **Easiest spot mode**: scores 40 random candidates on power, water, roads, rainfall, slope and likely land type, and picks the easiest for your town size. Runners-up are shown so you can compare.
 - **Spot details**: terrain and slope map, water nearby, roads, power lines, nearest town, city and hospital, climate, photos, an estimated land type and price, native title, a difficulty score, and step-by-step guides for buying the land and building a town.
 - **Share links**: every spot has its own URL (`/?lat=…&lng=…&size=…`).
 - **Google Earth and Google Maps buttons** for every spot.
