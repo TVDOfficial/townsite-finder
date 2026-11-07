@@ -11,8 +11,19 @@ Find a random spot in Australia that's well away from existing towns, see what i
 - **Spot details**: terrain and slope map, water nearby, roads, power lines, nearest town, city and hospital, climate, photos, an estimated land type and price, native title, a difficulty score, and step-by-step guides for buying the land and building a town.
 - **Share links**: every spot has its own URL (`/?lat=…&lng=…&size=…`).
 - **Google Earth and Google Maps buttons** for every spot.
-- **Town planner** (`/plan`): about 7 × 7 km of real terrain with the satellite photo draped over it. Place buildings and roads, see running costs, earthworks, housing capacity and town needs. Plans are saved in your browser.
-- **Walk and fly**: *Walk around*, then WASD to move, F to fly, Shift for super speed.
+- **Town planner** (`/plan`): about 7 × 7 km of real terrain with the satellite photo draped over it.
+  - 46 buildings across Housing, Community, Commercial, Industry, Utilities, Transport and Nature, each with a build cost, a yearly running cost and who pays it.
+  - Straight or curved roads (press C). Roads that cross or meet become junctions, and you can turn any junction into a roundabout or traffic lights.
+  - Auto-generated Australian street names you can rename, shown on street signs.
+  - Click anything to select it, then rotate (R), move (M) or delete it. Ctrl+Z undoes.
+  - Grid snapping (G) with a grid drawn on the terrain.
+  - An adjustable square town boundary with area and estimated land cost.
+  - Capacity meters for power, water, sewage, school places, healthcare, police and fire, groceries, internet and jobs.
+  - A budget panel with build cost, running cost per year or month, who pays, and council rates income.
+  - **Alive** mode: cars drive the roads (on the left) and people walk between homes, shops and parks.
+  - **Report**: a printable town plan report (Print / Save as PDF) with a 3D snapshot, site assessment, site plan, schedules, services, budget and approvals pathway.
+  - **Saving**: towns autosave in your browser. *Towns* lists them and lets you export or import a file, or copy a share link.
+- **Walk and fly**: *Walk*, then WASD to move, F to fly, Shift for super speed.
 
 ## Run it
 

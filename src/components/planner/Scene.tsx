@@ -11,12 +11,21 @@ import * as THREE from "three";
 import type { MapControls as MapControlsImpl } from "three-stdlib";
 import { CATALOG_BY_TYPE, ROADS, type ItemType, type RoadType } from "./catalog";
 import FirstPerson from "./FirstPerson";
-import { ribbon, type Placed, type Road } from "./geometry";
+import { GRID, ribbon, smoothPath, type Boundary, type Junction, type JunctionType, type Placed, type Road } from "./geometry";
+import BoundaryMesh from "./Boundary";
+import Junctions from "./Junctions";
+import Life from "./Life";
+import StreetSigns from "./StreetSigns";
 import { mats, setNight } from "./materials";
 import { boxGeo, Model } from "./models";
 import type { TerrainData } from "./terrain";
 
-export type Tool = { kind: "item"; type: ItemType } | { kind: "road"; type: RoadType } | null;
+export type Tool =
+  | { kind: "item"; type: ItemType }
+  | { kind: "move"; type: ItemType; id: number }
+  | { kind: "road"; type: RoadType }
+  | { kind: "junction"; type: Exclude<JunctionType, "plain"> }
+  | null;
 
 export interface SceneProps {
   terrain: TerrainData;
@@ -39,6 +48,24 @@ export interface SceneProps {
   onExitWalk: () => void;
   onWalkState: (s: { flying: boolean; speed: number; alt: number; locked: boolean }) => void;
   onWalkPause: () => void;
+  junctions: Junction[];
+  junctionTypes: Record<string, JunctionType>;
+  selectedJunction: string | null;
+  onJunctionClick: (key: string) => void;
+  grid: boolean;
+  snapItemPos: (type: ItemType, x: number, z: number) => [number, number];
+  snapRoadPos: (x: number, z: number) => [number, number];
+  selectedRoadId: number | null;
+  onRoadClick: (id: number) => void;
+  alive: boolean;
+  people: number;
+  curvy: boolean;
+  boundary: Boundary | null;
+  editBoundary: boolean;
+  boundaryDragging: boolean;
+  onBoundaryDragStart: (kind: number | "move", x: number, z: number) => void;
+  onBoundaryDrag: (x: number, z: number) => void;
+  onCapture: (fn: () => string) => void;
 }
 
 function sunDir(hour: number) {
@@ -48,8 +75,10 @@ function sunDir(hour: number) {
 }
 
 // ---------- Terrain ----------
-function TerrainMesh({ t, onPointerMove, onClick, onDoubleClick, onContextMenu, onPointerLeave }: {
+function TerrainMesh({ t, grid, cursor, onPointerMove, onClick, onDoubleClick, onContextMenu, onPointerLeave }: {
   t: TerrainData;
+  grid: boolean;
+  cursor: { x: number; z: number } | null;
   onPointerMove: (e: ThreeEvent<PointerEvent>) => void;
   onClick: (e: ThreeEvent<MouseEvent>) => void;
   onDoubleClick: (e: ThreeEvent<MouseEvent>) => void;
@@ -57,6 +86,7 @@ function TerrainMesh({ t, onPointerMove, onClick, onDoubleClick, onContextMenu, 
   onPointerLeave: () => void;
 }) {
   const gl = useThree((s) => s.gl);
+  const gridUniforms = useMemo(() => ({ uGrid: { value: 0 }, uCursor: { value: new THREE.Vector2() }, uSize: { value: GRID } }), []);
   const { geometry, material, outer } = useMemo(() => {
     const seg = 383;
     const g = new THREE.PlaneGeometry(t.size, t.size, seg, seg);
@@ -76,12 +106,40 @@ function TerrainMesh({ t, onPointerMove, onClick, onDoubleClick, onContextMenu, 
     const c = t.image.getContext("2d")!.getImageData(0, 0, t.image.width, t.image.height).data;
     let r = 0, gg = 0, b = 0, n = 0;
     for (let i = 0; i < c.length; i += 4 * 997) { r += c[i]; gg += c[i + 1]; b += c[i + 2]; n++; }
+    const material = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 });
+    // Placement grid drawn in the terrain shader: fine lines every GRID metres, bold every 5,
+    // fading out away from the cursor.
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uGrid = gridUniforms.uGrid;
+      shader.uniforms.uCursor = gridUniforms.uCursor;
+      shader.uniforms.uSize = gridUniforms.uSize;
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vGridPos;")
+        .replace("#include <project_vertex>", "#include <project_vertex>\nvGridPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+      shader.fragmentShader = shader.fragmentShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vGridPos;\nuniform float uGrid;\nuniform vec2 uCursor;\nuniform float uSize;")
+        .replace("#include <dithering_fragment>", `#include <dithering_fragment>
+          if (uGrid > 0.5) {
+            vec2 c = vGridPos.xz / uSize;
+            vec2 g = abs(fract(c - 0.5) - 0.5) / fwidth(c);
+            float minor = 1.0 - min(min(g.x, g.y), 1.0);
+            vec2 c5 = c / 5.0;
+            vec2 g5 = abs(fract(c5 - 0.5) - 0.5) / fwidth(c5);
+            float major = 1.0 - min(min(g5.x, g5.y), 1.0);
+            float fade = 1.0 - smoothstep(70.0, 320.0, distance(vGridPos.xz, uCursor));
+            float a = max(minor * 0.3, major * 0.7) * fade;
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0), a);
+          }`);
+    };
     return {
       geometry: g,
-      material: new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 }),
+      material,
       outer: { min, color: new THREE.Color(`rgb(${Math.round(r / n)},${Math.round(gg / n)},${Math.round(b / n)})`) },
     };
-  }, [t, gl]);
+  }, [t, gl, gridUniforms]);
+
+  gridUniforms.uGrid.value = grid ? 1 : 0;
+  if (cursor) gridUniforms.uCursor.value.set(cursor.x, cursor.z);
 
   return (
     <>
@@ -100,7 +158,7 @@ function TerrainMesh({ t, onPointerMove, onClick, onDoubleClick, onContextMenu, 
 }
 
 // ---------- Placed buildings ----------
-const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive }: { p: Placed; selected: boolean; onSelect: (id: number) => void; interactive: boolean }) {
+const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive, hidden }: { p: Placed; selected: boolean; onSelect: (id: number) => void; interactive: boolean; hidden?: boolean }) {
   const g = useRef<THREE.Group>(null);
   const born = useRef(performance.now());
   const { w, d } = CATALOG_BY_TYPE[p.type];
@@ -116,7 +174,7 @@ const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive
   const M = mats();
   return (
     <group
-      ref={g} position={[p.x, p.base, p.z]} rotation={[0, p.rot, 0]}
+      ref={g} position={[p.x, p.base, p.z]} rotation={[0, p.rot, 0]} visible={!hidden}
       onClick={interactive ? (e) => { if (e.delta > 5) return; e.stopPropagation(); onSelect(p.id); } : undefined}
     >
       {plinth > 0.15 && <mesh geometry={boxGeo(w, plinth + 0.3, d)} position={[0, -(plinth + 0.3) / 2, 0]} material={M.concrete} castShadow receiveShadow />}
@@ -129,7 +187,7 @@ const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive
 });
 
 // ---------- Roads ----------
-const RoadMesh = memo(function RoadMesh({ t, road, draft }: { t: TerrainData; road: Road; draft?: boolean }) {
+const RoadMesh = memo(function RoadMesh({ t, road, draft, selected, onClick }: { t: TerrainData; road: Road; draft?: boolean; selected?: boolean; onClick?: (id: number) => void }) {
   const M = mats();
   const parts = useMemo(() => {
     if (road.pts.length < 2) return [];
@@ -144,7 +202,17 @@ const RoadMesh = memo(function RoadMesh({ t, road, draft }: { t: TerrainData; ro
     ];
   }, [t, road, M]);
   useEffect(() => () => parts.forEach((p) => p.g.dispose()), [parts]);
-  return <>{parts.map((p, i) => <mesh key={i} geometry={p.g} material={draft ? M.ghostOk : p.m} receiveShadow />)}</>;
+  const highlight = useMemo(
+    () => (selected && road.pts.length >= 2 ? ribbon(t, road.pts, ROADS[road.type].width + (road.type === "main" ? 6 : 2), 0, 0.85) : null),
+    [selected, t, road],
+  );
+  const click = onClick ? (e: ThreeEvent<MouseEvent>) => { if (e.delta > 5) return; e.stopPropagation(); onClick(road.id); } : undefined;
+  return (
+    <>
+      {parts.map((p, i) => <mesh key={i} geometry={p.g} material={draft ? M.ghostOk : p.m} receiveShadow onClick={click} />)}
+      {highlight && <mesh geometry={highlight} material={M.selected} />}
+    </>
+  );
 });
 
 // ---------- Ghost preview ----------
@@ -248,32 +316,44 @@ function BuildCamera({ focus, enabled }: { focus: React.RefObject<THREE.Vector3>
 }
 
 function InteractionLayer(props: SceneProps) {
-  const { terrain: t, tool, rot, validate, onPlace, onRoadPoint, onFinishRoad, onSelect, onHoverInfo, draftRoad, mode } = props;
-  const [hover, setHover] = useState<{ x: number; z: number } | null>(null);
-  const v = tool?.kind === "item" && hover ? validate(tool.type, hover.x, hover.z, rot) : null;
+  const { terrain: t, tool, rot, validate, onPlace, onRoadPoint, onFinishRoad, onSelect, onHoverInfo, draftRoad, mode, grid, snapItemPos, snapRoadPos } = props;
+  const [raw, setRaw] = useState<{ x: number; z: number } | null>(null);
+  // Snap the cursor to the grid / nearby roads before previewing or placing.
+  const hover = useMemo(() => {
+    if (!raw) return null;
+    if (tool?.kind === "item" || tool?.kind === "move") { const [x, z] = snapItemPos(tool.type, raw.x, raw.z); return { x, z }; }
+    if (tool?.kind === "road") { const [x, z] = snapRoadPos(raw.x, raw.z); return { x, z }; }
+    return raw;
+  }, [raw, tool, snapItemPos, snapRoadPos]);
+  const placing = tool?.kind === "item" || tool?.kind === "move" ? tool : null;
+  const v = placing && hover ? validate(placing.type, hover.x, hover.z, rot) : null;
   useEffect(() => { onHoverInfo(v ? { ok: v.ok, reason: v.reason } : null); }, [v?.ok, v?.reason]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const draft = useMemo<Road | null>(() => {
     if (tool?.kind !== "road" || !draftRoad.length) return null;
-    return { id: -1, type: tool.type, pts: hover ? [...draftRoad, [hover.x, hover.z]] : draftRoad };
-  }, [tool, draftRoad, hover]);
+    const pts: [number, number][] = hover ? [...draftRoad, [hover.x, hover.z]] : draftRoad;
+    return { id: -1, type: tool.type, name: "", pts: props.curvy ? smoothPath(pts) : pts };
+  }, [tool, draftRoad, hover, props.curvy]);
 
   return (
     <>
       <TerrainMesh
-        t={t}
-        onPointerMove={(e) => { if (mode === "build" && tool) setHover({ x: e.point.x, z: e.point.z }); }}
-        onPointerLeave={() => setHover(null)}
+        t={t} grid={grid && mode === "build"} cursor={raw}
+        onPointerMove={(e) => {
+          if (props.boundaryDragging) { props.onBoundaryDrag(e.point.x, e.point.z); return; }
+          if (mode === "build" && (tool || grid)) setRaw({ x: e.point.x, z: e.point.z });
+        }}
+        onPointerLeave={() => setRaw(null)}
         onClick={(e) => {
           if (mode !== "build" || e.delta > 5) return;
-          if (tool?.kind === "item") onPlace(e.point.x, e.point.z);
-          else if (tool?.kind === "road") onRoadPoint(e.point.x, e.point.z);
+          if (placing && hover) onPlace(hover.x, hover.z);
+          else if (tool?.kind === "road" && hover) onRoadPoint(hover.x, hover.z);
           else onSelect(null);
         }}
         onDoubleClick={() => { if (tool?.kind === "road") onFinishRoad(); }}
         onContextMenu={(e) => { e.nativeEvent.preventDefault(); if (tool?.kind === "road") onFinishRoad(); }}
       />
-      {tool?.kind === "item" && hover && v && mode === "build" && <Ghost type={tool.type} x={hover.x} z={hover.z} rot={rot} base={v.base} ok={v.ok} />}
+      {placing && hover && v && mode === "build" && <Ghost type={placing.type} x={hover.x} z={hover.z} rot={rot} base={v.base} ok={v.ok} />}
       {draft && draft.pts.length >= 2 && <RoadMesh t={t} road={draft} draft />}
       {tool?.kind === "road" && hover && (
         <mesh position={[hover.x, t.heightAt(hover.x, hover.z) + 1, hover.z]}>
@@ -292,15 +372,37 @@ function World(props: SceneProps) {
     <>
       <Lighting hour={hour} focus={focus} />
       <InteractionLayer {...props} />
-      {roads.map((r) => <RoadMesh key={r.id} t={t} road={r} />)}
-      {placed.map((p) => <PlacedItem key={p.id} p={p} selected={p.id === selectedId} onSelect={onSelect} interactive={mode === "build" && !tool} />)}
+      {roads.map((r) => (
+        <RoadMesh key={r.id} t={t} road={r} selected={props.selectedRoadId === r.id} onClick={mode === "build" && !tool ? props.onRoadClick : undefined} />
+      ))}
+      <StreetSigns t={t} roads={roads} />
+      {props.boundary && <BoundaryMesh t={t} b={props.boundary} editing={props.editBoundary && mode === "build"} onDragStart={props.onBoundaryDragStart} />}
+      <CaptureBridge onCapture={props.onCapture} />
+      {props.alive && <Life t={t} placed={placed} roads={roads} junctionTypes={props.junctionTypes} people={props.people} hour={hour} />}
+      <Junctions
+        t={t} junctions={props.junctions} types={props.junctionTypes}
+        highlight={mode === "build" && tool?.kind === "junction"} selected={props.selectedJunction}
+        onClick={mode === "build" && (!tool || tool.kind === "junction") ? props.onJunctionClick : undefined}
+      />
+      {placed.map((p) => (
+        <PlacedItem key={p.id} p={p} selected={p.id === selectedId} onSelect={onSelect} interactive={mode === "build" && !tool} hidden={tool?.kind === "move" && tool.id === p.id} />
+      ))}
       {mode === "build" ? (
-        <BuildCamera focus={focus} enabled />
+        <BuildCamera focus={focus} enabled={!props.boundaryDragging} />
       ) : (
         <FirstPerson terrain={t} collide={props.collide} focus={focus} onExit={props.onExitWalk} onState={props.onWalkState} onPause={props.onWalkPause} />
       )}
     </>
   );
+}
+
+/** Lets the page grab a screenshot of the 3D view (for the report). */
+function CaptureBridge({ onCapture }: { onCapture: (fn: () => string) => void }) {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    onCapture(() => { gl.render(scene, camera); return gl.domElement.toDataURL("image/jpeg", 0.88); });
+  }, [gl, scene, camera, onCapture]);
+  return null;
 }
 
 export default function Scene(props: SceneProps) {

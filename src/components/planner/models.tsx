@@ -5,6 +5,7 @@ import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import type { ItemType } from "./catalog";
 import { mats } from "./materials";
+import { ExtraModel } from "./models2";
 
 type V3 = [number, number, number];
 
@@ -812,7 +813,8 @@ export function Model({ type, seed }: { type: ItemType; seed: number }): ReactNo
     case "substation": return <Substation />;
     case "telecom": return <Telecom />;
     case "trees": return <Trees seed={seed} />;
+    default: return <ExtraModel type={type} seed={seed} />;
   }
 }
 
-export { boxGeo };
+export { boxGeo, B, Cyl, Roof, Windows, Posts, Car, Gum, Tank, Pad, Sign, rng };
