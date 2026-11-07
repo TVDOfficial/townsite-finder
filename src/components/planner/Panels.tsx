@@ -258,14 +258,16 @@ export function RoadCard({ road, len, build, upkeep, period, onRename, onRandomN
 
 export function JunctionCard({ j, type, onType, onClose }: { j: Junction; type: JunctionType; onType: (t: JunctionType) => void; onClose: () => void }) {
   const opts: { t: JunctionType; label: string; emoji: string; cost: number }[] = [
-    { t: "plain", label: "Intersection", emoji: "✚", cost: 0 },
+    { t: "plain", label: "No signs", emoji: "✚", cost: 0 },
+    { t: "giveway", label: "Give way", emoji: JUNCTIONS.giveway.emoji, cost: JUNCTIONS.giveway.cost },
+    { t: "stop", label: "Stop signs", emoji: JUNCTIONS.stop.emoji, cost: JUNCTIONS.stop.cost },
     { t: "roundabout", label: JUNCTIONS.roundabout.name, emoji: JUNCTIONS.roundabout.emoji, cost: JUNCTIONS.roundabout.cost },
     { t: "lights", label: JUNCTIONS.lights.name, emoji: JUNCTIONS.lights.emoji, cost: JUNCTIONS.lights.cost },
   ];
   return (
     <div className="glass pointer-events-auto flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5">
       <div>
-        <div className="text-sm font-semibold">{j.arms}-way junction</div>
+        <div className="text-sm font-semibold">{j.arms === 3 ? "T-intersection" : `${j.arms}-way crossroads`}</div>
         <div className="text-xs text-white/60">Choose how traffic gets through</div>
       </div>
       {opts.map((o) => (

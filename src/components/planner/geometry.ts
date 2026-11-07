@@ -125,7 +125,17 @@ export function ribbon(t: TerrainData, pts: [number, number][], width: number, o
 // ---------- Road network: junctions ----------
 
 type P = [number, number];
-export type JunctionType = "plain" | "roundabout" | "lights";
+/** plain = no signs; giveway / stop = signs + lines on the side road(s). */
+export type JunctionType = "plain" | "giveway" | "stop" | "roundabout" | "lights";
+
+/** One road arm leaving a junction. */
+export interface Leg {
+  dx: number; // unit direction from the junction along the road
+  dz: number;
+  width: number;
+  roadId: number;
+  minor: boolean; // side road: gets the stop / give-way sign
+}
 
 export interface Junction {
   key: string;
@@ -133,6 +143,7 @@ export interface Junction {
   z: number;
   arms: number;
   width: number; // widest road meeting here
+  legs: Leg[];
 }
 
 export const pointKey = (p: P) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`;
@@ -198,23 +209,45 @@ export function addRoadToNetwork(roads: Road[], road: Road): Road[] {
   return all;
 }
 
-/** Points where three or more road arms meet. */
+/** Points where three or more road arms meet, with which road is the main one. */
 export function findJunctions(roads: Road[]): Junction[] {
-  const map = new Map<string, Junction>();
+  const RANK: Record<RoadType, number> = { gravel: 1, sealed: 2, main: 3 };
+  type Arm = { dx: number; dz: number; width: number; road: Road; through: boolean };
+  const map = new Map<string, { x: number; z: number; arms: Arm[] }>();
   for (const r of roads) {
     const w = ROADS[r.type].width + (r.type === "main" ? 4 : 0);
     r.pts.forEach((p, i) => {
-      const arms = i === 0 || i === r.pts.length - 1 ? 1 : 2;
       const k = pointKey(p);
-      const j = map.get(k);
-      if (j) { j.arms += arms; j.width = Math.max(j.width, w); }
-      else map.set(k, { key: k, x: p[0], z: p[1], arms, width: w });
+      let j = map.get(k);
+      if (!j) { j = { x: p[0], z: p[1], arms: [] }; map.set(k, j); }
+      const through = i > 0 && i < r.pts.length - 1;
+      for (const n of [r.pts[i - 1], r.pts[i + 1]]) {
+        if (!n) continue;
+        const dx = n[0] - p[0], dz = n[1] - p[1];
+        const len = Math.hypot(dx, dz) || 1;
+        j.arms.push({ dx: dx / len, dz: dz / len, width: w, road: r, through });
+      }
     });
   }
-  return [...map.values()].filter((j) => j.arms >= 3);
+  const out: Junction[] = [];
+  for (const [key, j] of map) {
+    if (j.arms.length < 3) continue;
+    // The main road is the one that carries straight through, then the bigger road type.
+    const major = [...j.arms].sort((a, b) => Number(b.through) - Number(a.through) || RANK[b.road.type] - RANK[a.road.type] || a.road.id - b.road.id)[0].road;
+    out.push({
+      key, x: j.x, z: j.z, arms: j.arms.length,
+      width: Math.max(...j.arms.map((a) => a.width)),
+      legs: j.arms.map((a) => ({ dx: a.dx, dz: a.dz, width: a.width, roadId: a.road.id, minor: a.road.id !== major.id })),
+    });
+  }
+  return out;
 }
 
-export const JUNCTION_COST: Record<JunctionType, number> = { plain: 0, roundabout: 2_500_000, lights: 650_000 };
+/** New junctions: T-intersections get give-way signs; four or more roads get stop signs. */
+export const defaultJunctionType = (j: Junction): JunctionType => (j.arms >= 4 ? "stop" : "giveway");
+export const junctionTypeOf = (types: Record<string, JunctionType>, j: Junction): JunctionType => types[j.key] ?? defaultJunctionType(j);
+
+export const JUNCTION_COST: Record<JunctionType, number> = { plain: 0, giveway: 3_000, stop: 4_000, roundabout: 2_500_000, lights: 650_000 };
 
 /** Grid snapping: building edges line up with grid lines; quarter-turn rotations only. */
 export const GRID = 5;

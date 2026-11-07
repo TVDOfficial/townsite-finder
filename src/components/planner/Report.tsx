@@ -154,7 +154,9 @@ export default function Report({ plan, totals, meters, roadInfo, junctions, junc
           </table>
           {junctions.length > 0 && (
             <p className="mt-2 text-sm text-neutral-600">
-              Intersections: {junctions.length} total — {junctions.filter((j) => junctionTypes[j.key] === "roundabout").length} roundabouts ({money(JUNCTIONS.roundabout.cost)} each),{" "}
+              Intersections: {junctions.length} total — {junctions.filter((j) => junctionTypes[j.key] === "giveway").length} give way,{" "}
+              {junctions.filter((j) => junctionTypes[j.key] === "stop").length} stop signs,{" "}
+              {junctions.filter((j) => junctionTypes[j.key] === "roundabout").length} roundabouts ({money(JUNCTIONS.roundabout.cost)} each),{" "}
               {junctions.filter((j) => junctionTypes[j.key] === "lights").length} with traffic lights ({money(JUNCTIONS.lights.cost)} each).
             </p>
           )}
@@ -257,7 +259,7 @@ function SitePlan({ plan, boundary, junctions, junctionTypes }: { plan: PlanData
       {plan.roads.map((r) => (
         <polyline key={r.id} points={r.pts.map(([x, z]) => `${X(x)},${Y(z)}`).join(" ")} fill="none" stroke={r.type === "gravel" ? "#b08b5a" : "#6b6b6b"} strokeWidth={Math.max(2, ROADS[r.type].width * s)} strokeLinecap="round" strokeLinejoin="round" />
       ))}
-      {junctions.filter((j) => (junctionTypes[j.key] ?? "plain") !== "plain").map((j) => (
+      {junctions.filter((j) => junctionTypes[j.key] === "roundabout" || junctionTypes[j.key] === "lights").map((j) => (
         <circle key={j.key} cx={X(j.x)} cy={Y(j.z)} r={Math.max(4, 14 * s)} fill={junctionTypes[j.key] === "roundabout" ? "#7cb36b" : "#e8a33d"} stroke="#555" strokeWidth={1} />
       ))}
       {plan.placed.map((p) => (

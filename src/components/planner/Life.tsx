@@ -83,6 +83,8 @@ function Cars({ t, roads, junctionTypes, count }: { t: TerrainData; roads: Road[
         car.prev = car.from; car.from = car.to; car.to = next; car.t = 0;
         const jt = junctionTypes[car.from];
         if (jt === "lights" && Math.random() < 0.5) car.wait = 1 + Math.random() * 4; // stopped at a red light
+        else if (jt === "stop") car.wait = 1.2 + Math.random(); // full stop, then go
+        else if (jt === "giveway") car.wait = Math.random() < 0.4 ? 0.3 + Math.random() * 0.8 : 0;
         else if (jt === "roundabout") car.wait = Math.random() * 0.6;
       }
       const x = a[0] + (b[0] - a[0]) * car.t, z = a[1] + (b[1] - a[1]) * car.t;

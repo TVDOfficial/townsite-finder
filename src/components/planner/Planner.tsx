@@ -17,7 +17,7 @@ import {
   type Category, type ItemType, type Payer, type RoadType,
 } from "./catalog";
 import {
-  addRoadToNetwork, closestOnSegment, corners, findJunctions, JUNCTION_COST, overlaps, placementCost, roadStats, roadUpkeep,
+  addRoadToNetwork, closestOnSegment, corners, defaultJunctionType, findJunctions, JUNCTION_COST, junctionTypeOf, overlaps, placementCost, roadStats, roadUpkeep,
   siteWorks, snapItem, snapToGrid, smoothPath, insideBoundary, dragCorner, boundaryAreaHa,
   type Boundary, type JunctionType, type Placed, type Road,
 } from "./geometry";
@@ -67,6 +67,9 @@ export default function Planner() {
   const placed = useMemo(() => plan?.placed ?? [], [plan?.placed]);
   const roads = useMemo(() => plan?.roads ?? [], [plan?.roads]);
   const junctionTypes = useMemo(() => plan?.junctionTypes ?? {}, [plan?.junctionTypes]);
+  const junctions = useMemo(() => findJunctions(roads), [roads]);
+  // Every junction's actual type: what you picked, or the default (give way for T, stop for 4+).
+  const resolvedTypes = useMemo(() => Object.fromEntries(junctions.map((j) => [j.key, junctionTypeOf(junctionTypes, j)])), [junctions, junctionTypes]);
 
   const flash = (msg: string, tone: "bad" | "good" = "bad") => {
     setToast({ msg, tone });
@@ -287,9 +290,11 @@ export default function Planner() {
   }, [commit]);
 
   const onJunctionClick = (key: string) => {
+    const j = junctions.find((x) => x.key === key);
+    if (!j) return;
     if (tool?.kind === "junction") {
-      const cur = junctionTypes[key] ?? "plain";
-      setJunction(key, cur === tool.type ? "plain" : tool.type);
+      const cur = junctionTypeOf(junctionTypes, j);
+      setJunction(key, cur === tool.type ? defaultJunctionType(j) : tool.type);
     } else setSel({ kind: "junction", key });
   };
 
@@ -328,7 +333,7 @@ export default function Planner() {
       if (e.key === "Delete" || e.key === "Backspace") {
         if (sel?.kind === "item") removeItem(sel.id);
         else if (sel?.kind === "road") removeRoad(sel.id);
-        else if (sel?.kind === "junction") setJunction(sel.key, "plain");
+        else if (sel?.kind === "junction") { const j = junctions.find((x) => x.key === sel.key); if (j) setJunction(sel.key, defaultJunctionType(j)); }
       }
       if ((e.ctrlKey || e.metaKey) && k === "z") undo();
     };
@@ -337,7 +342,6 @@ export default function Planner() {
   });
 
   // ---------- Derived data ----------
-  const junctions = useMemo(() => findJunctions(roads), [roads]);
   const roadInfo = useMemo(() => {
     const m = new Map<number, { len: number; build: number; upkeep: number; grade: number }>();
     if (terrain) for (const r of roads) { const s = roadStats(terrain, r); m.set(r.id, { len: s.len, build: s.cost, upkeep: roadUpkeep(s.len, r.type), grade: s.grade }); }
@@ -368,7 +372,7 @@ export default function Planner() {
     for (const r of roadInfo.values()) { roadKm += r.len / 1000; roadBuild += r.build; roadUp += r.upkeep; }
     let junctionBuild = 0, junctionUpkeep = 0;
     for (const j of junctions) {
-      const t = junctionTypes[j.key] ?? "plain";
+      const t = junctionTypeOf(junctionTypes, j);
       junctionBuild += JUNCTION_COST[t];
       if (t !== "plain") junctionUpkeep += JUNCTIONS[t].upkeep;
     }
@@ -449,7 +453,7 @@ export default function Planner() {
           validate={validate} collide={collide} onPlace={onPlace} onRoadPoint={onRoadPoint} onFinishRoad={finishRoad}
           onSelect={(id) => setSel(id == null ? null : { kind: "item", id })} onHoverInfo={setHoverInfo}
           onExitWalk={() => setMode("build")} onWalkState={setWalk} onWalkPause={() => setWalkPaused(true)}
-          junctions={junctions} junctionTypes={junctionTypes} selectedJunction={sel?.kind === "junction" ? sel.key : null} onJunctionClick={onJunctionClick}
+          junctions={junctions} junctionTypes={resolvedTypes} selectedJunction={sel?.kind === "junction" ? sel.key : null} onJunctionClick={onJunctionClick}
           grid={grid} snapItemPos={snapItemPos} snapRoadPos={snapRoadPos}
           selectedRoadId={sel?.kind === "road" ? sel.id : null} onRoadClick={(id) => setSel({ kind: "road", id })}
           alive={alive} people={totals.people} curvy={curvy}
@@ -549,7 +553,7 @@ export default function Planner() {
                         <PaletteCard key={k} i={i} emoji={ROADS[k].emoji} name={ROADS[k].name} cost={`${money(ROADS[k].perKm)}/km`} blurb={ROADS[k].blurb}
                           active={tool?.kind === "road" && tool.type === k} onClick={() => pickTool({ kind: "road", type: k })} />
                       ))}
-                      {(["roundabout", "lights"] as const).map((k, i) => (
+                      {(["giveway", "stop", "roundabout", "lights"] as const).map((k, i) => (
                         <PaletteCard key={k} i={i + 3} emoji={JUNCTIONS[k].emoji} name={JUNCTIONS[k].name} cost={money(JUNCTIONS[k].cost)} blurb={JUNCTIONS[k].blurb}
                           active={tool?.kind === "junction" && tool.type === k} onClick={() => pickTool({ kind: "junction", type: k })} />
                       ))}
@@ -562,7 +566,7 @@ export default function Planner() {
               </AnimatePresence>
               {tab === "Roads" && (
                 <p className="mt-3 px-1 text-[11px] leading-relaxed text-white/55">
-                  Roads that cross or meet become junctions automatically. Pick Roundabout or Traffic lights, then click a glowing junction. Click a road to rename it.
+                  Roads that cross or meet become junctions automatically: T-intersections get give-way signs and crossroads get stop signs. Pick another type here, then click a glowing junction. Click a road to rename it.
                 </p>
               )}
             </div>
@@ -611,7 +615,7 @@ export default function Planner() {
                 </Slide>
               ) : selJunction ? (
                 <Slide k={`j${selJunction.key}`}>
-                  <JunctionCard j={selJunction} type={junctionTypes[selJunction.key] ?? "plain"} onType={(t) => setJunction(selJunction.key, t)} onClose={() => setSel(null)} />
+                  <JunctionCard j={selJunction} type={junctionTypeOf(junctionTypes, selJunction)} onType={(t) => setJunction(selJunction.key, t)} onClose={() => setSel(null)} />
                 </Slide>
               ) : tool ? (
                 <Slide k={`t${JSON.stringify(tool)}`}>
@@ -656,7 +660,7 @@ export default function Planner() {
 
       <AnimatePresence>
         {report !== false && plan && plan.boundary && (
-          <Report plan={plan} totals={totals} meters={meters} roadInfo={roadInfo} junctions={junctions} junctionTypes={junctionTypes}
+          <Report plan={plan} totals={totals} meters={meters} roadInfo={roadInfo} junctions={junctions} junctionTypes={resolvedTypes}
             boundary={plan.boundary} site={site} nearby={nearby} snapshot={report} onClose={() => setReport(false)} />
         )}
       </AnimatePresence>

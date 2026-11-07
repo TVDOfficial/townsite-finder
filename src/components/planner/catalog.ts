@@ -112,6 +112,8 @@ export const ROADS: Record<RoadType, { name: string; width: number; perKm: numbe
 };
 
 export const JUNCTIONS = {
+  giveway: { name: "Give way signs", cost: 3 * k, upkeep: 300, emoji: "🔻", blurb: "Click a junction to put give-way signs and lines on the side road." },
+  stop: { name: "Stop signs", cost: 4 * k, upkeep: 300, emoji: "🛑", blurb: "Click a junction to put stop signs and stop lines on the side road." },
   roundabout: { name: "Roundabout", cost: 2.5 * M, upkeep: 15 * k, emoji: "🔄", blurb: "Click a junction to add a roundabout with a planted island." },
   lights: { name: "Traffic lights", cost: 650 * k, upkeep: 12 * k, emoji: "🚦", blurb: "Click a junction to add working traffic signals." },
 } as const;
