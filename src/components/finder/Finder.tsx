@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Dices, Layers3, MapPin, RotateCcw, Radar } from "lucide-react";
+import { Dices, Layers3, MapPin, RotateCcw, Radar, Sparkles, Trophy } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SIZES, type SizeKey } from "@/lib/analysis";
@@ -13,6 +13,7 @@ const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => 
 
 type Phase = "idle" | "searching" | "flying" | "done" | "error";
 const STATE_OPTIONS: (StateCode | "ALL")[] = ["ALL", "NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"];
+const EASY_LINES = ["Gathering 40 candidate spots…", "Checking distance to power lines…", "Measuring rainfall and slope…", "Looking for water and main roads…", "Scoring the finalists…"];
 const SCAN_LINES = ["Rolling the dice on the map…", "Checking distance to every town…", "Avoiding national parks…", "Skipping reserves and Aboriginal land…", "Nearly there…"];
 
 export default function Finder() {
@@ -21,6 +22,7 @@ export default function Finder() {
   const [hamlets, setHamlets] = useState(false);
   const [sizeKey, setSizeKey] = useState<SizeKey>("small");
   const [phase, setPhase] = useState<Phase>("idle");
+  const [searchMode, setSearchMode] = useState<"random" | "easy">("random");
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<RejectedPoint[]>([]);
   const [pick, setPick] = useState<PickResult | null>(null);
@@ -79,9 +81,9 @@ export default function Finder() {
 
   useEffect(() => {
     if (phase !== "searching") return;
-    const t = setInterval(() => setScanLine((n) => (n + 1) % SCAN_LINES.length), 900);
+    const t = setInterval(() => setScanLine((n) => (n + 1) % SCAN_LINES.length), searchMode === "easy" ? 2200 : 900);
     return () => clearInterval(t);
-  }, [phase]);
+  }, [phase, searchMode]);
 
   const find = async () => {
     setPhase("searching");
@@ -94,7 +96,7 @@ export default function Finder() {
     setRejected([]);
     panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     try {
-      const r = await fetch(`/api/pick?state=${state}&minKm=${minKm}&hamlets=${hamlets ? 1 : 0}`);
+      const r = await fetch(`/api/pick?state=${state}&minKm=${minKm}&hamlets=${hamlets ? 1 : 0}${searchMode === "easy" ? `&mode=easy&size=${sizeKey}` : ""}`);
       const j = await r.json();
       if (!r.ok) { setRejected(j.rejected ?? []); throw new Error(j.error ?? "Search failed"); }
       pickRef.current = j;
@@ -165,6 +167,33 @@ export default function Finder() {
               )}
             </AnimatePresence>
 
+            <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1">
+              {([["random", "Random spot", Dices], ["easy", "Easiest spot", Sparkles]] as const).map(([key, label, Icon]) => (
+                <button key={key} onClick={() => setSearchMode(key)} disabled={busy} className="relative z-10 flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-semibold">
+                  {searchMode === key && <motion.span layoutId="mode-pill" className="absolute inset-0 -z-10 rounded-lg bg-surface shadow-sm" transition={{ type: "spring", stiffness: 400, damping: 32 }} />}
+                  <Icon size={15} className={searchMode === key ? "text-accent" : "text-muted"} /> {label}
+                </button>
+              ))}
+            </div>
+            <AnimatePresence initial={false}>
+              {searchMode === "easy" && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <p className="mb-2 text-xs text-muted">
+                    Scores 40 random spots on power, water, roads, rainfall, slope and land type, then picks the easiest for this town size:
+                  </p>
+                  <div className="mb-4 grid grid-cols-3 gap-1">
+                    {Object.values(SIZES).map((s) => (
+                      <button key={s.key} onClick={() => setSizeKey(s.key)} disabled={busy}
+                        className={`relative rounded-lg px-1 py-1.5 text-xs font-semibold ${sizeKey === s.key ? "text-white" : "bg-surface-2 hover:bg-border"}`}>
+                        {sizeKey === s.key && <motion.span layoutId="easy-size-pill" className="absolute inset-0 rounded-lg bg-accent" transition={{ type: "spring", stiffness: 500, damping: 35 }} />}
+                        <span className="relative">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <label className="text-xs font-semibold uppercase tracking-wide text-muted">Where</label>
             <div className="mt-1.5 grid grid-cols-5 gap-1">
               {STATE_OPTIONS.map((s) => (
@@ -202,7 +231,7 @@ export default function Finder() {
               <motion.span animate={busy ? { rotate: [0, 90, 180, 270, 360] } : { rotate: 0 }} transition={busy ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
                 {busy ? <Radar size={20} /> : <Dices size={20} />}
               </motion.span>
-              {busy ? "Searching…" : phase === "idle" ? "Find me a spot" : "Find another spot"}
+              {busy ? (searchMode === "easy" ? "Scoring spots…" : "Searching…") : searchMode === "easy" ? "Find the easiest spot" : phase === "idle" ? "Find me a spot" : "Find another spot"}
             </motion.button>
           </motion.section>
 
@@ -219,12 +248,14 @@ export default function Finder() {
                   <div className="min-w-0">
                     <AnimatePresence mode="wait">
                       <motion.div key={scanLine} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="text-sm font-medium">
-                        {phase === "flying" ? "Found one! Flying there…" : SCAN_LINES[scanLine]}
+                        {phase === "flying" ? (pick?.easy ? "Found the easiest one! Flying there…" : "Found one! Flying there…") : (searchMode === "easy" ? EASY_LINES : SCAN_LINES)[scanLine % 5]}
                       </motion.div>
                     </AnimatePresence>
                     {pick && (
                       <div className="text-xs text-muted">
-                        Checked <CountUp value={pick.tried} /> random points · red dots were too close to a town
+                        {pick.easy
+                          ? <>Scored {pick.easy.checked} spots · green dots are runners-up, orange were harder</>
+                          : <>Checked <CountUp value={pick.tried} /> random points · red dots were too close to a town</>}
                       </div>
                     )}
                   </div>
@@ -249,6 +280,31 @@ export default function Finder() {
 
             {phase === "done" && details && (
               <motion.div key={`${details.lat},${details.lng}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {pick?.easy && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-3 rounded-2xl border border-emerald-200 bg-accent-soft p-3 dark:border-emerald-900">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-accent-strong">
+                      <Trophy size={16} /> Easiest of {pick.easy.checked} spots checked
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted">
+                      Quick score {pick.easy.score} for a {SIZES[sizeKey].label.toLowerCase()}. The full score below uses more detail, so it can differ a little.
+                    </p>
+                    {pick.easy.alternatives.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {[{ lng: pick.lng, lat: pick.lat, score: pick.easy.score, near: "Best" }, ...pick.easy.alternatives].map((a, i) => {
+                          const active = spot && Math.abs(spot.lat - a.lat) < 1e-6 && Math.abs(spot.lng - a.lng) < 1e-6;
+                          return (
+                            <motion.button key={`${a.lat},${a.lng}`} whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }}
+                              initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }}
+                              onClick={() => { setSpot({ lng: a.lng, lat: a.lat }); loadSpot(a.lng, a.lat); panelRef.current?.scrollTo({ top: 0, behavior: "smooth" }); }}
+                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? "bg-accent text-white" : "bg-surface text-foreground hover:bg-border"}`}>
+                              #{i + 1} {i === 0 ? "" : `near ${a.near} `}· {a.score}
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
                 {pick?.warning && (
                   <div className="mb-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{pick.warning}</div>
                 )}

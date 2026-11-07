@@ -66,6 +66,8 @@ const REASON_COLOR: Record<RejectedPoint["reason"], string> = {
   military: "#64748b",
   water: "#3b82f6",
   residential: "#ef4444",
+  harder: "#fb923c",
+  alternative: "#22c55e",
 };
 
 function circlePolygon(lng: number, lat: number, radiusM: number): GeoJSON.Feature {

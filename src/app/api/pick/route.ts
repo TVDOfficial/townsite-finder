@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { randomPointIn, settlementWithin } from "@/lib/geo";
 import { protectedAreaAt } from "@/lib/arcgis";
+import { findEasiest } from "@/lib/easy";
+import { SIZES, type SizeKey } from "@/lib/analysis";
 import { STATE_NAMES, type PickResult, type RejectedPoint, type StateCode } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -15,6 +17,16 @@ export async function GET(req: NextRequest) {
   const minKm = Math.min(150, Math.max(2, Number(sp.get("minKm")) || 25));
   // 2 = towns + villages count as "too close"; 3 = hamlets count too
   const maxType = sp.get("hamlets") === "1" ? 3 : 2;
+
+  if (sp.get("mode") === "easy") {
+    const size = (sp.get("size") ?? "small") as SizeKey;
+    const result = await findEasiest(state, minKm, maxType, size in SIZES ? size : "small");
+    if (result) return Response.json(result);
+    return Response.json(
+      { error: `No buildable spot found ${minKm} km from every town in ${state === "ALL" ? "Australia" : STATE_NAMES[state]}. Try a smaller distance.`, rejected: [] },
+      { status: 404 },
+    );
+  }
 
   const rejected: RejectedPoint[] = [];
   let nearSeen = 0;

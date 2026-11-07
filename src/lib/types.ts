@@ -15,7 +15,7 @@ export const STATE_NAMES: Record<StateCode, string> = {
 export interface RejectedPoint {
   lng: number;
   lat: number;
-  reason: "near-town" | "protected" | "aboriginal" | "military" | "water" | "residential";
+  reason: "near-town" | "protected" | "aboriginal" | "military" | "water" | "residential" | "harder" | "alternative";
   label?: string;
 }
 
@@ -26,6 +26,12 @@ export interface PickResult {
   rejected: RejectedPoint[];
   tried: number;
   warning?: string;
+  /** Present when searching for the easiest spot */
+  easy?: {
+    checked: number;
+    score: number;
+    alternatives: { lng: number; lat: number; score: number; near: string }[];
+  };
 }
 
 export interface AreaInfo {

@@ -98,7 +98,7 @@ const powerBoxes = POWER.map((l) => {
   return [minX, minY, maxX, maxY];
 });
 
-function nearestPowerLine(p: LngLat): NearFeature | undefined {
+export function nearestPowerLine(p: LngLat): NearFeature | undefined {
   if (!POWER.length) return undefined;
   let best: { km: number; point: LngLat; kv: number } | null = null;
   POWER.forEach((l, idx) => {
@@ -119,9 +119,14 @@ function nearestPowerLine(p: LngLat): NearFeature | undefined {
 const MAJOR = new Set(["motorway", "trunk", "primary", "secondary"]);
 const LOCAL = new Set(["tertiary", "minor", "track", "service"]);
 
-export async function nearbyFromTiles(lng: number, lat: number): Promise<Omit<NearbyDetails, "area" | "errors">> {
+/** quick = low-zoom tiles only (rivers, lakes, main roads) for screening many spots. */
+export async function nearbyFromTiles(lng: number, lat: number, quick = false): Promise<Omit<NearbyDetails, "area" | "errors">> {
   const p: LngLat = [lng, lat];
-  const [t9, t12, t13] = await Promise.all([tilesAround(lng, lat, 9), tilesAround(lng, lat, 12), tilesAround(lng, lat, 13)]);
+  const [t9, t12, t13] = await Promise.all([
+    tilesAround(lng, lat, 9),
+    quick ? Promise.resolve([]) : tilesAround(lng, lat, 12),
+    quick ? Promise.resolve([]) : tilesAround(lng, lat, 13),
+  ]);
 
   const best: Record<string, Hit> = {};
   const keep = (key: string, h: Hit) => { if (!best[key] || h.km < best[key].km) best[key] = h; };
