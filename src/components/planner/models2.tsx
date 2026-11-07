@@ -5,6 +5,7 @@ import { useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import type { ItemType } from "./catalog";
 import { mats } from "./materials";
+import { FunModel } from "./models3";
 import { B, Car, Cyl, Gum, Pad, Posts, rng, Roof, Sign, Tank, Windows } from "./models";
 
 function AgedCare() {
@@ -458,6 +459,6 @@ export function ExtraModel({ type, seed }: { type: ItemType; seed: number }): Re
     case "carpark": return <CarPark />;
     case "station": return <Station />;
     case "airstrip": return <Airstrip />;
-    default: return null;
+    default: return <FunModel type={type} seed={seed} />;
   }
 }

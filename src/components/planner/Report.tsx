@@ -15,7 +15,7 @@ import type { PlanData } from "./storage";
 import { LogoMark, PORTFOLIO_URL } from "../Logo";
 
 const CAT_COLOR: Record<Category, string> = {
-  Housing: "#e8a33d", Community: "#2f80ed", Commercial: "#c94f3d", Industry: "#7f8c8d", Utilities: "#16a085", Transport: "#8e44ad", Nature: "#27ae60",
+  Housing: "#e8a33d", Community: "#2f80ed", Commercial: "#c94f3d", Industry: "#7f8c8d", Utilities: "#16a085", Transport: "#8e44ad", Fun: "#e84393", Nature: "#27ae60",
 };
 
 interface Props {

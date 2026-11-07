@@ -1,7 +1,7 @@
 // Very rough 2025-ish Australian regional costs. For fun, not quotes.
 // cost = to build; upkeep = running cost per year (maintenance, staff, energy, insurance).
 
-export type Category = "Housing" | "Community" | "Commercial" | "Industry" | "Utilities" | "Transport" | "Nature";
+export type Category = "Housing" | "Community" | "Commercial" | "Industry" | "Utilities" | "Transport" | "Fun" | "Nature";
 export type Payer = "council" | "state" | "private";
 export type ItemType =
   | "house" | "townhouses" | "apartments" | "agedcare"
@@ -10,6 +10,7 @@ export type ItemType =
   | "warehouse" | "workshop" | "silos"
   | "watertower" | "watertreat" | "sewage" | "solar" | "wind" | "battery" | "substation" | "telecom" | "windmill"
   | "busstop" | "carpark" | "station" | "airstrip"
+  | "waterpark" | "wavepark" | "themepark" | "ferris" | "harbour" | "zoo" | "drivein" | "karts" | "minigolf" | "golf"
   | "trees";
 
 export interface CatalogItem {
@@ -98,11 +99,22 @@ export const CATALOG: CatalogItem[] = [
   { type: "station", name: "Train station", category: "Transport", w: 60, d: 14, cost: 18 * M, upkeep: 600 * k, payer: "state", jobs: 6, provides: ["transport"], emoji: "🚉", blurb: "Platform, shelter and a heritage station building." },
   { type: "airstrip", name: "Airstrip", category: "Transport", w: 900, d: 40, cost: 9 * M, upkeep: 150 * k, payer: "council", provides: ["transport"], emoji: "🛬", blurb: "900 m sealed strip for the flying doctor and light planes." },
 
+  { type: "waterpark", name: "Water park", category: "Fun", w: 90, d: 70, cost: 38 * M, upkeep: 3.5 * M, payer: "private", jobs: 60, provides: ["jobs"], emoji: "💦", blurb: "Twisting slides, a lazy river, a splash pad and a big pool." },
+  { type: "wavepark", name: "Wave park", category: "Fun", w: 170, d: 90, cost: 55 * M, upkeep: 4 * M, payer: "private", jobs: 45, provides: ["jobs"], emoji: "🏄", blurb: "A surf lagoon that rolls out perfect waves, hundreds of kilometres from the coast." },
+  { type: "themepark", name: "Theme park", category: "Fun", w: 160, d: 110, cost: 90 * M, upkeep: 9 * M, payer: "private", jobs: 180, provides: ["jobs"], emoji: "🎢", blurb: "A looping roller coaster, a carousel, a drop tower and food stalls." },
+  { type: "ferris", name: "Ferris wheel", category: "Fun", w: 40, d: 24, cost: 9 * M, upkeep: 400 * k, payer: "private", jobs: 8, emoji: "🎡", blurb: "A 40 m wheel with views over the whole town." },
+  { type: "harbour", name: "Harbour & marina", category: "Fun", w: 140, d: 90, cost: 48 * M, upkeep: 1.4 * M, payer: "state", jobs: 40, provides: ["jobs"], emoji: "⚓", blurb: "Breakwater, jetties, a boat ramp and a lighthouse. Best on a coast, lake or river." },
+  { type: "zoo", name: "Wildlife park", category: "Fun", w: 110, d: 80, cost: 16 * M, upkeep: 2.2 * M, payer: "private", jobs: 35, provides: ["jobs"], emoji: "🐨", blurb: "Kangaroos, koalas, emus and a croc pond." },
+  { type: "drivein", name: "Drive-in cinema", category: "Fun", w: 80, d: 70, cost: 3 * M, upkeep: 350 * k, payer: "private", jobs: 6, emoji: "🎬", blurb: "A giant screen, rows of cars and a retro snack bar." },
+  { type: "karts", name: "Go-kart track", category: "Fun", w: 80, d: 50, cost: 4.5 * M, upkeep: 500 * k, payer: "private", jobs: 10, emoji: "🏎️", blurb: "A twisty track with tyre walls and a pit lane." },
+  { type: "minigolf", name: "Mini golf", category: "Fun", w: 30, d: 24, cost: 900 * k, upkeep: 120 * k, payer: "private", jobs: 4, emoji: "⛳", blurb: "Eighteen silly holes with a windmill." },
+  { type: "golf", name: "Golf course", category: "Fun", w: 320, d: 200, cost: 9 * M, upkeep: 900 * k, payer: "private", jobs: 12, emoji: "🏌️", blurb: "Nine short holes, bunkers, a dam and a clubhouse." },
+
   { type: "trees", name: "Trees", category: "Nature", w: 14, d: 14, cost: 9 * k, upkeep: 300, payer: "council", emoji: "🌲", blurb: "A small stand of gum trees." },
 ];
 
 export const CATALOG_BY_TYPE = Object.fromEntries(CATALOG.map((c) => [c.type, c])) as Record<ItemType, CatalogItem>;
-export const CATEGORIES: Category[] = ["Housing", "Community", "Commercial", "Industry", "Utilities", "Transport", "Nature"];
+export const CATEGORIES: Category[] = ["Housing", "Community", "Commercial", "Industry", "Utilities", "Transport", "Fun", "Nature"];
 
 export type RoadType = "gravel" | "sealed" | "main";
 export const ROADS: Record<RoadType, { name: string; width: number; perKm: number; upkeepPerKm: number; emoji: string; blurb: string }> = {

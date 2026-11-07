@@ -33,7 +33,13 @@ export interface SimContext {
   rainMm: number;
 }
 
-const AMENITIES: ItemType[] = ["park", "playground", "pub", "cafe", "bakery", "pool", "oval", "skatepark", "church", "garden", "bigthing", "townhall", "childcare"];
+const AMENITIES: ItemType[] = ["park", "playground", "pub", "cafe", "bakery", "pool", "oval", "skatepark", "church", "garden", "bigthing", "townhall", "childcare",
+  "waterpark", "wavepark", "themepark", "ferris", "harbour", "zoo", "drivein", "karts", "minigolf", "golf"];
+// What visitors to each attraction bring the council per year (parking, event fees, tourism levies).
+const TOURISM: Partial<Record<ItemType, number>> = {
+  waterpark: 250_000, wavepark: 400_000, themepark: 600_000, ferris: 60_000, harbour: 300_000,
+  zoo: 150_000, drivein: 40_000, karts: 50_000, minigolf: 20_000, golf: 80_000, bigthing: 30_000,
+};
 const GRANT_PER_PERSON = 450; // state & federal grants to councils, per resident per year
 const COMMERCIAL_RATES = 9_000; // per commercial / industrial building per year
 export const LOAN_SIZE = 10_000_000;
@@ -110,6 +116,15 @@ export function step(s: SimState, ctx: SimContext, rand: () => number = Math.ran
     start("festival", 2); funds += 300_000; say(has("bigthing") ? "Tourists flock to see the Big Kangaroo festival (+$300k)." : "The annual show and footy carnival is a hit (+$300k).", "good");
   }
 
+  // Summer holidays: attractions pull in crowds once a year.
+  const tourismYear = ctx.placed.reduce((sum, p) => sum + (TOURISM[p.type] ?? 0), 0);
+  if (t % 12 === 0 && tourismYear >= 200_000) {
+    const best = ctx.placed.map((p) => p.type).filter((x) => TOURISM[x]).sort((a, b) => TOURISM[b]! - TOURISM[a]!)[0];
+    const bonus = Math.round(tourismYear * 0.3 / 10_000) * 10_000;
+    funds += bonus;
+    say(`Summer holidays: visitors pack the ${CATALOG_BY_TYPE[best].name.toLowerCase()} (+${fmt(bonus)}).`, "good");
+  }
+
   // ---- Services at the current population ----
   const capacity = capacityOf(ctx.placed);
   const isActive = (k: EventKey) => events.some((e) => e.key === k && e.until > t);
@@ -119,12 +134,13 @@ export function step(s: SimState, ctx: SimContext, rand: () => number = Math.ran
   });
   const sat = satisfaction(meters);
   const amenity = Math.min(1, new Set(ctx.placed.filter((p) => AMENITIES.includes(p.type)).map((p) => p.type)).size / 6);
+  const fun = Math.min(1, new Set(ctx.placed.filter((p) => CATALOG_BY_TYPE[p.type].category === "Fun").map((p) => p.type)).size / 3);
 
   // ---- Money (council only: rates, grants, commercial rates vs council upkeep and loans) ----
   const dwellings = ctx.placed.reduce((sum, p) => sum + (CATALOG_BY_TYPE[p.type].dwellings ?? 0), 0);
   const occupancy = capacity ? s.pop / capacity : 0;
-  const commercial = ctx.placed.filter((p) => ["Commercial", "Industry"].includes(CATALOG_BY_TYPE[p.type].category)).length;
-  const income = (dwellings * occupancy * RATES_PER_DWELLING + s.pop * GRANT_PER_PERSON + commercial * COMMERCIAL_RATES) / 12;
+  const commercial = ctx.placed.filter((p) => ["Commercial", "Industry", "Fun"].includes(CATALOG_BY_TYPE[p.type].category)).length;
+  const income = (dwellings * occupancy * RATES_PER_DWELLING + s.pop * GRANT_PER_PERSON + commercial * COMMERCIAL_RATES + tourismYear) / 12;
   const expense = ctx.councilUpkeep / 12 + s.loanPayment;
   funds += income - expense;
   let debt = s.debt;
@@ -139,7 +155,7 @@ export function step(s: SimState, ctx: SimContext, rand: () => number = Math.ran
   // Core services get a town to the high 70s; amenities, healthy finances and "big town" extras
   // (hospital, high school, pool) are what push it towards 100.
   const extras = (["hospital", "highschool", "pool"] as ItemType[]).filter(has).length / 3;
-  let target = 8 + 64 * sat.score + 14 * amenity + 6 * (funds >= 0 ? 1 : 0) + 8 * extras;
+  let target = 8 + 64 * sat.score + 14 * amenity + 6 * (funds >= 0 ? 1 : 0) + 8 * extras + 4 * fun;
   if (isActive("bushfire")) target -= 12;
   if (isActive("festival")) target += 6;
   if (isActive("boom")) target += 4;
@@ -211,5 +227,6 @@ export const CHALLENGES: Challenge[] = [
   { id: "nodebt10", emoji: "🧾", name: "Careful council", desc: "10 years without going into the red", check: (s) => s.t >= 120 && !s.everNegative },
   { id: "drought", emoji: "💧", name: "Drought-proof", desc: "Get through a drought with no water shortage", check: (s) => s.droughtsSurvived > 0 },
   { id: "offgrid", emoji: "☀️", name: "Off the grid", desc: "300+ residents on solar/wind only, no power shortage", check: (s, ctx, m) => s.pop >= 300 && !ctx.placed.some((p) => p.type === "substation") && (m.find((x) => x.key === "power")!.supply >= m.find((x) => x.key === "power")!.demand) },
+  { id: "hotspot", emoji: "🎢", name: "Holiday hotspot", desc: "Have 4 different fun attractions and 300+ residents", check: (s, ctx) => s.pop >= 300 && new Set(ctx.placed.filter((p) => CATALOG_BY_TYPE[p.type].category === "Fun").map((p) => p.type)).size >= 4 },
   { id: "decade", emoji: "🎂", name: "Ten years on", desc: "Run the town for 10 years", check: (s) => s.t >= 120 },
 ];

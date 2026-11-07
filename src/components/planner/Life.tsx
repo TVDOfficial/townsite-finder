@@ -12,7 +12,7 @@ import type { TerrainData } from "./terrain";
 type P = [number, number];
 const CAR_COLORS = ["#ecf0f1", "#2c3e50", "#c0392b", "#7f8c8d", "#16a085", "#2980b9", "#e67e22", "#bdc3c7", "#1f1f1f", "#8e44ad"];
 const SHIRTS = ["#e74c3c", "#3498db", "#2ecc71", "#f1c40f", "#9b59b6", "#e67e22", "#1abc9c", "#ecf0f1", "#34495e"];
-const DESTINATIONS: ItemType[] = ["park", "playground", "shop", "cafe", "bakery", "supermarket", "pub", "school", "highschool", "townhall", "church", "pool", "oval", "skatepark", "garden", "clinic", "hardware", "bigthing", "station", "busstop"];
+const DESTINATIONS: ItemType[] = ["park", "playground", "shop", "cafe", "bakery", "supermarket", "pub", "school", "highschool", "townhall", "church", "pool", "oval", "skatepark", "garden", "clinic", "hardware", "bigthing", "station", "busstop", "waterpark", "wavepark", "themepark", "ferris", "harbour", "zoo", "drivein", "karts", "minigolf", "golf"];
 const HOMES: ItemType[] = ["house", "townhouses", "apartments", "agedcare", "motel", "caravan"];
 
 /** Front door of a building: just outside the front edge. */

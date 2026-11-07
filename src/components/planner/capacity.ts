@@ -18,9 +18,12 @@ const DEMAND: Partial<Record<ItemType, { power?: number; water?: number }>> = {
   hardware: { power: 60, water: 2 }, bigthing: { power: 2 }, warehouse: { power: 80, water: 2 }, workshop: { power: 20, water: 1 },
   silos: { power: 60, water: 0.5 }, watertower: { power: 5 }, watertreat: { power: 150, water: 0 }, sewage: { power: 200 },
   telecom: { power: 3 }, busstop: { power: 0.2 }, carpark: { power: 2 }, station: { power: 20, water: 2 }, airstrip: { power: 10, water: 0.5 },
+  waterpark: { power: 300, water: 150 }, wavepark: { power: 900, water: 100 }, themepark: { power: 700, water: 40 }, ferris: { power: 60 },
+  harbour: { power: 80, water: 10 }, zoo: { power: 60, water: 40 }, drivein: { power: 25, water: 1 }, karts: { power: 30, water: 1 },
+  minigolf: { power: 5, water: 2 }, golf: { power: 20, water: 400 },
 };
 // Water used outdoors (doesn't come back as sewage)
-const IRRIGATION: ItemType[] = ["park", "oval", "garden", "playground"];
+const IRRIGATION: ItemType[] = ["park", "oval", "garden", "playground", "golf"];
 
 // What each building supplies. power kW avg, water/sewage kL/day, others = people served or places.
 const SUPPLY: Partial<Record<ItemType, Partial<Record<Resource, number>>>> = {

@@ -169,9 +169,9 @@ function TerrainMesh({ t, grid, cursor, onPointerMove, onClick, onDoubleClick, o
 // Simple stand-in boxes for buildings far from the camera (keeps big towns smooth).
 // Full models out to this distance; HQ keeps them almost all the way to the max zoom-out (7 km).
 const LOD_DIST = { fast: 1400, hq: 6500 };
-const NO_LOD = new Set<ItemType>(["wind", "oval", "solar", "airstrip", "park", "trees", "garden", "carpark", "busstop", "playground", "skatepark", "pool"]);
-const LOD_COLOR: Record<Category, string> = { Housing: "#d9cdb8", Community: "#d6dbe0", Commercial: "#d8c7b0", Industry: "#b9bfc5", Utilities: "#c9d1d3", Transport: "#c4c0b8", Nature: "#6f7f45" };
-const LOD_HEIGHT: Partial<Record<ItemType, number>> = { apartments: 13, townhouses: 8, hospital: 12, highschool: 7, silos: 22, watertower: 26, telecom: 30, warehouse: 9, supermarket: 8 };
+const NO_LOD = new Set<ItemType>(["wind", "oval", "solar", "airstrip", "park", "trees", "garden", "carpark", "busstop", "playground", "skatepark", "pool", "wavepark", "harbour", "golf", "minigolf", "karts", "drivein", "zoo"]);
+const LOD_COLOR: Record<Category, string> = { Housing: "#d9cdb8", Community: "#d6dbe0", Commercial: "#d8c7b0", Industry: "#b9bfc5", Utilities: "#c9d1d3", Transport: "#c4c0b8", Fun: "#e8b4c8", Nature: "#6f7f45" };
+const LOD_HEIGHT: Partial<Record<ItemType, number>> = { apartments: 13, townhouses: 8, hospital: 12, highschool: 7, silos: 22, watertower: 26, telecom: 30, warehouse: 9, supermarket: 8, waterpark: 14, themepark: 30, ferris: 40 };
 const lodMats = new Map<Category, THREE.MeshStandardMaterial>();
 const lodMat = (c: Category) => {
   let m = lodMats.get(c);
