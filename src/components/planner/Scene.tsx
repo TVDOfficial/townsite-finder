@@ -167,6 +167,8 @@ function TerrainMesh({ t, grid, cursor, onPointerMove, onClick, onDoubleClick, o
 
 // ---------- Placed buildings ----------
 // Simple stand-in boxes for buildings far from the camera (keeps big towns smooth).
+// Full models out to this distance; HQ keeps them almost all the way to the max zoom-out (7 km).
+const LOD_DIST = { fast: 1400, hq: 6500 };
 const NO_LOD = new Set<ItemType>(["wind", "oval", "solar", "airstrip", "park", "trees", "garden", "carpark", "busstop", "playground", "skatepark", "pool"]);
 const LOD_COLOR: Record<Category, string> = { Housing: "#d9cdb8", Community: "#d6dbe0", Commercial: "#d8c7b0", Industry: "#b9bfc5", Utilities: "#c9d1d3", Transport: "#c4c0b8", Nature: "#6f7f45" };
 const LOD_HEIGHT: Partial<Record<ItemType, number>> = { apartments: 13, townhouses: 8, hospital: 12, highschool: 7, silos: 22, watertower: 26, telecom: 30, warehouse: 9, supermarket: 8 };
@@ -177,7 +179,7 @@ const lodMat = (c: Category) => {
   return m;
 };
 
-const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive, hidden, delay = 0 }: { p: Placed; selected: boolean; onSelect: (id: number) => void; interactive: boolean; hidden?: boolean; delay?: number }) {
+const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive, hidden, delay = 0, lod }: { p: Placed; selected: boolean; onSelect: (id: number) => void; interactive: boolean; hidden?: boolean; delay?: number; lod: number }) {
   const g = useRef<THREE.Group>(null);
   const born = useRef(performance.now() + delay);
   const { w, d, category } = CATALOG_BY_TYPE[p.type];
@@ -200,7 +202,7 @@ const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive
       {NO_LOD.has(p.type) ? (
         <Model type={p.type} seed={p.id} />
       ) : (
-        <Detailed distances={[0, 450]}>
+        <Detailed distances={[0, lod]}>
           <group><Model type={p.type} seed={p.id} /></group>
           <mesh geometry={boxGeo(w * 0.8, LOD_HEIGHT[p.type] ?? 5, d * 0.75)} position={[0, (LOD_HEIGHT[p.type] ?? 5) / 2, 0]} material={lodMat(category)} />
         </Detailed>
@@ -460,7 +462,7 @@ function World(props: SceneProps) {
       />
       {placed.map((p) => (
         <PlacedItem
-          key={p.id} p={p} selected={p.id === selectedId} onSelect={onSelect} interactive={mode === "build" && !tool} hidden={tool?.kind === "move" && tool.id === p.id}
+          key={p.id} p={p} lod={props.quality ? LOD_DIST.hq : LOD_DIST.fast} selected={p.id === selectedId} onSelect={onSelect} interactive={mode === "build" && !tool} hidden={tool?.kind === "move" && tool.id === p.id}
           delay={props.reveal && p.id >= props.reveal.minId ? Math.min(2600, Math.hypot(p.x - props.reveal.cx, p.z - props.reveal.cz) * 2.2) : 0}
         />
       ))}
