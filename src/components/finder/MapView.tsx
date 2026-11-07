@@ -36,11 +36,19 @@ const STYLE: StyleSpecification = {
     rejected: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
     land: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
     links: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+    parcel: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+    buildings: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
   },
   layers: [
     { id: "imagery", type: "raster", source: "imagery", paint: { "raster-saturation": 0.05, "raster-contrast": 0.05 } },
     { id: "labels", type: "raster", source: "labels", paint: { "raster-opacity": 0.85 } },
     { id: "states", type: "line", source: "states", paint: { "line-color": "#ffffff", "line-opacity": 0.45, "line-width": 1.2, "line-dasharray": [3, 2] } },
+    { id: "parcel-fill", type: "fill", source: "parcel", paint: { "fill-color": "#fb923c", "fill-opacity": 0.08 } },
+    { id: "parcel-line", type: "line", source: "parcel", paint: { "line-color": "#fb923c", "line-width": 2.5 } },
+    {
+      id: "buildings", type: "circle", source: "buildings",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 6], "circle-color": "#ffffff", "circle-stroke-color": "#111", "circle-stroke-width": 1.5 },
+    },
     { id: "land-fill", type: "fill", source: "land", paint: { "fill-color": "#2ccf93", "fill-opacity": 0.14 } },
     { id: "land-line", type: "line", source: "land", paint: { "line-color": "#2ccf93", "line-width": 2.5, "line-dasharray": [2, 1.5] } },
     { id: "links", type: "line", source: "links", layout: { "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": 2.5, "line-dasharray": [1, 2] } },
@@ -68,6 +76,7 @@ const REASON_COLOR: Record<RejectedPoint["reason"], string> = {
   residential: "#ef4444",
   harder: "#fb923c",
   alternative: "#22c55e",
+  building: "#e879f9",
 };
 
 function circlePolygon(lng: number, lat: number, radiusM: number): GeoJSON.Feature {
@@ -201,6 +210,21 @@ export default function MapView({ rejected, spot, details, nearby, size, terrain
       src.setData({ type: "FeatureCollection", features: [circlePolygon(spot.lng, spot.lat, r)] });
     }).catch(() => {});
   }, [spot, size]);
+
+  // The property parcel the spot sits in, and nearby buildings.
+  useEffect(() => {
+    readyRef.current?.then((map) => {
+      const empty = { type: "FeatureCollection" as const, features: [] };
+      const parcel = details?.parcel;
+      (map.getSource("parcel") as GeoJSONSource).setData(
+        spot && parcel?.outline.length ? { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: parcel.outline } } : empty,
+      );
+      const pts = nearby?.buildings?.points ?? [];
+      (map.getSource("buildings") as GeoJSONSource).setData(
+        spot ? { type: "FeatureCollection", features: pts.map((p) => ({ type: "Feature" as const, properties: {}, geometry: { type: "Point" as const, coordinates: p } })) } : empty,
+      );
+    }).catch(() => {});
+  }, [spot, details, nearby]);
 
   // Lines from the spot to the nearest water, road, power, town and hospital.
   useEffect(() => {

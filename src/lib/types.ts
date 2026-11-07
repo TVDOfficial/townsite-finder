@@ -15,7 +15,7 @@ export const STATE_NAMES: Record<StateCode, string> = {
 export interface RejectedPoint {
   lng: number;
   lat: number;
-  reason: "near-town" | "protected" | "aboriginal" | "military" | "water" | "residential" | "harder" | "alternative";
+  reason: "near-town" | "protected" | "aboriginal" | "military" | "water" | "residential" | "harder" | "alternative" | "building";
   label?: string;
 }
 
@@ -55,6 +55,24 @@ export interface ProtectedArea {
 export interface NativeTitle {
   determination?: { name: string; outcome: string; id: string };
   claim?: { name: string; id: string };
+}
+
+export interface Parcel {
+  state: StateCode;
+  id: string; // e.g. "Lot 35 on RP851332"
+  tenure?: string; // QLD only
+  areaHa: number;
+  lga?: string;
+  locality?: string;
+  link?: string;
+  outline: LngLat[][];
+}
+
+export interface Buildings {
+  within1km: number;
+  within3km: number;
+  nearest: { km: number; lng: number; lat: number } | null;
+  points: LngLat[];
 }
 
 export interface NearFeature {
@@ -116,6 +134,7 @@ export interface SpotDetails {
   state: StateCode | null;
   protectedArea: ProtectedArea | null;
   nativeTitle: NativeTitle | null;
+  parcel: Parcel | null;
   terrain: Terrain | null;
   climate: Climate | null;
   places: Place[];
@@ -128,6 +147,7 @@ export interface SpotDetails {
 
 export interface NearbyDetails {
   area: AreaInfo | null;
+  buildings: Buildings | null;
   water: NearFeature[] | null;
   infrastructure: {
     majorRoad?: NearFeature;

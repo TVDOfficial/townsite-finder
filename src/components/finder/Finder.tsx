@@ -20,6 +20,7 @@ export default function Finder() {
   const [state, setState] = useState<StateCode | "ALL">("ALL");
   const [minKm, setMinKm] = useState(25);
   const [hamlets, setHamlets] = useState(false);
+  const [avoidBuildings, setAvoidBuildings] = useState(true);
   const [sizeKey, setSizeKey] = useState<SizeKey>("small");
   const [phase, setPhase] = useState<Phase>("idle");
   const [searchMode, setSearchMode] = useState<"random" | "easy">("random");
@@ -96,7 +97,7 @@ export default function Finder() {
     setRejected([]);
     panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     try {
-      const r = await fetch(`/api/pick?state=${state}&minKm=${minKm}&hamlets=${hamlets ? 1 : 0}${searchMode === "easy" ? `&mode=easy&size=${sizeKey}` : ""}`);
+      const r = await fetch(`/api/pick?state=${state}&minKm=${minKm}&hamlets=${hamlets ? 1 : 0}&avoidBuildings=${avoidBuildings ? 1 : 0}${searchMode === "easy" ? `&mode=easy&size=${sizeKey}` : ""}`);
       const j = await r.json();
       if (!r.ok) { setRejected(j.rejected ?? []); throw new Error(j.error ?? "Search failed"); }
       pickRef.current = j;
@@ -216,6 +217,10 @@ export default function Finder() {
             <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-muted">
               <input type="checkbox" checked={hamlets} onChange={(e) => setHamlets(e.target.checked)} disabled={busy} className="accent-[var(--accent)]" />
               Count tiny hamlets as towns too
+            </label>
+            <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-sm text-muted">
+              <input type="checkbox" checked={avoidBuildings} onChange={(e) => setAvoidBuildings(e.target.checked)} disabled={busy} className="accent-[var(--accent)]" />
+              Avoid spots with farmhouses or sheds within 2 km
             </label>
 
             <motion.button

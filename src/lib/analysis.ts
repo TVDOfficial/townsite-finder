@@ -44,6 +44,16 @@ export function estimateTenure(d: SpotDetails, n: NearbyDetails | null): Tenure 
   if (d.nativeTitle?.determination && /exclusive\)?$/i.test(d.nativeTitle.determination.outcome) && !/non-exclusive/i.test(d.nativeTitle.determination.outcome))
     return { key: "aboriginal", label: "Exclusive native title", confidence: "high", blocked: true, why: `Exclusive native title held by ${d.nativeTitle.determination.name}.` };
 
+  // Queensland publishes the real tenure of every parcel.
+  const qt = d.parcel?.tenure;
+  if (qt) {
+    const where = `${d.parcel!.id}, ${Math.round(d.parcel!.areaHa).toLocaleString()} ha (Queensland cadastre).`;
+    if (/freehold/i.test(qt)) return { key: "freehold", label: "Freehold (private property)", confidence: "high", blocked: false, why: `Privately owned: ${where}` };
+    if (/lease/i.test(qt)) return { key: "pastoral", label: "State leasehold", confidence: "high", blocked: false, why: `${qt}: ${where}` };
+    if (/national park|forest|reserve|conservation/i.test(qt)) return { key: "protected", label: qt, confidence: "high", blocked: true, why: `${qt}: ${where}` };
+    if (/state land|unallocated/i.test(qt)) return { key: "crown", label: "Unallocated State land", confidence: "high", blocked: false, why: `${qt}: ${where}` };
+  }
+
   const s = d.state;
   const pastoral = (why: string): Tenure => ({ key: "pastoral", label: "Pastoral lease (likely)", confidence: "medium", blocked: false, why });
   const freehold = (why: string): Tenure => ({ key: "freehold", label: "Freehold farmland (likely)", confidence: "medium", blocked: false, why });

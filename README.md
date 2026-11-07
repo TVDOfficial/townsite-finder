@@ -50,6 +50,8 @@ Fetched live, per spot:
 | What | Source |
 |---|---|
 | Parks and reserves | CAPAD 2024 (DCCEEW ArcGIS service) |
+| Property parcels (lot/plan, tenure, area, outline) | Queensland and NSW cadastre services |
+| Nearby buildings (homesteads, sheds) | Overture Maps buildings, incl. Microsoft ML footprints (PMTiles on S3) |
 | Native title | National Native Title Tribunal ArcGIS service |
 | Elevation | Open-Meteo (Copernicus 90 m) in the finder; AWS Terrain Tiles in the planner |
 | Climate (2015–2024) | Open-Meteo ERA5 archive |
@@ -64,6 +66,7 @@ API responses send `Cache-Control: s-maxage` headers so Vercel's CDN caches each
 
 ## Limitations
 
-- Land type is a rule-based guess from state, rainfall and location. ABARES' national land tenure service is offline, so check the real parcel with the state viewer the app links to. Live state lookups are planned.
+- Almost all land in Australia is owned or leased. In Queensland and NSW the app shows the actual property parcel (and in Queensland its tenure); owner names need a paid title search. Other states still use the estimate below.
+- Land type outside Queensland is a rule-based guess from state, rainfall and location. ABARES' national land tenure service is offline, so check the real parcel with the state viewer the app links to. Live state lookups are planned.
 - Prices and build costs are rough ranges for curiosity, not quotes or advice.
 - Post-processing (ambient occlusion, bloom) is disabled because `@react-three/postprocessing` and drei's `<Environment>` don't work with three r187.

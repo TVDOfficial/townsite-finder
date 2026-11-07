@@ -1,7 +1,8 @@
 import "server-only";
 import { haversineKm, nearestHospital, nearestMajorCity, nearestPlaces, offsetMeters, stateAt } from "./geo";
 import { areasAt, USER_AGENT } from "./overpass";
-import { nativeTitleAt, protectedAreaAt } from "./arcgis";
+import { nativeTitleAt, parcelAt, protectedAreaAt } from "./arcgis";
+import { buildingsNear } from "./buildings";
 import { nearbyFromTiles } from "./tiles";
 import type { Climate, LngLat, NearbyDetails, Photo, SpotDetails, Terrain } from "./types";
 
@@ -131,9 +132,11 @@ export async function getSpotDetails(lng: number, lat: number): Promise<SpotDeta
   const errors: string[] = [];
   const safe = makeSafe(errors);
 
-  const [prot, title, terr, clim, wiki, mapi] = await Promise.all([
+  const state = stateAt(lng, lat);
+  const [prot, title, parcel, terr, clim, wiki, mapi] = await Promise.all([
     safe("Protected areas", () => protectedAreaAt(lng, lat), null),
     safe("Native title", () => nativeTitleAt(lng, lat), null),
+    safe("Land parcel", () => parcelAt(lng, lat, state), null),
     safe("Terrain", () => terrain(lng, lat), null),
     safe("Climate", () => climate(lng, lat), null),
     safe("Photos", () => wikimediaPhotos(lng, lat), [] as Photo[]),
@@ -142,9 +145,10 @@ export async function getSpotDetails(lng: number, lat: number): Promise<SpotDeta
 
   return {
     lng, lat,
-    state: stateAt(lng, lat),
+    state,
     protectedArea: prot,
     nativeTitle: title,
+    parcel,
     terrain: terr,
     climate: clim,
     places: nearestPlaces(p, 6),
@@ -160,10 +164,11 @@ export async function getSpotDetails(lng: number, lat: number): Promise<SpotDeta
 export async function getNearbyDetails(lng: number, lat: number): Promise<NearbyDetails> {
   const errors: string[] = [];
   const safe = makeSafe(errors);
-  const [area, near] = await Promise.all([
+  const [area, near, buildings] = await Promise.all([
     // Council name + Aboriginal land from OSM. Public Overpass servers are often busy, so keep this short.
     safe("Council area", () => areasAt(lat, lng, 6000), null),
     safe("Water & infrastructure", () => nearbyFromTiles(lng, lat), null),
+    safe("Buildings", () => buildingsNear(lng, lat), null),
   ]);
-  return { area, water: near?.water ?? null, infrastructure: near?.infrastructure ?? null, errors };
+  return { area, buildings, water: near?.water ?? null, infrastructure: near?.infrastructure ?? null, errors };
 }

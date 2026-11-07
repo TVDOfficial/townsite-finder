@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import {
   Building2, CloudRain, Compass, Copy, Droplets, ExternalLink, Globe2, Hammer, Hospital, Landmark, Map as MapIcon,
-  Mountain, Plane, Route, Scale, ShieldAlert, Sparkles, Sun, TrainFront, Zap, Check, Image as ImageIcon,
+  Mountain, Plane, Route, Scale, Home, ShieldAlert, Sparkles, Sun, TrainFront, Zap, Check, Image as ImageIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -134,6 +134,36 @@ export default function DetailsPanel({ details: d, nearby, nearbyLoading, sizeKe
           </Badge>
         </div>
         <p className="mt-1 text-sm text-muted">{tenure.why}</p>
+
+        <div className="mt-3 rounded-xl border border-border p-3 text-sm">
+          <div className="flex items-center gap-2 font-medium"><Home size={15} className="text-muted" /> Whose land is this?</div>
+          {d.parcel ? (
+            <div className="mt-1.5 space-y-1">
+              <div><b>{d.parcel.id}</b>{d.parcel.tenure ? ` · ${d.parcel.tenure}` : ""} · {Math.round(d.parcel.areaHa).toLocaleString()} ha
+                {d.parcel.lga ? ` · ${d.parcel.lga}` : ""}</div>
+              <p className="text-muted">
+                This spot is inside a surveyed property (orange outline on the map).
+                {d.parcel.tenure && /freehold/i.test(d.parcel.tenure) ? " It's privately owned, so you'd have to buy it from the owner." : " You'd deal with whoever holds it, or the state."}
+                {" "}Owner names aren&apos;t public: a title search from {d.parcel.state === "QLD" ? "Titles Queensland" : "NSW Land Registry Services"} costs about $20–40.
+              </p>
+              {d.parcel.link && <a href={d.parcel.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">View this parcel on the Queensland SmartMap <ExternalLink size={11} /></a>}
+            </div>
+          ) : (
+            <p className="mt-1.5 text-muted">
+              Almost all land in Australia is owned or leased, even when it looks empty. {d.state === "QLD" || d.state === "NSW" ? "No parcel was found at this exact point." : `Property boundaries for ${STATE_NAMES[state]} aren't shown here yet; check ${STATE_INFO[state].viewer.label}.`}
+            </p>
+          )}
+          <div className="mt-2 border-t border-border pt-2">
+            {nearbyLoading ? <Skeleton className="h-5 w-48" /> : nearby?.buildings ? (
+              nearby.buildings.nearest ? (
+                <span>
+                  <b>{nearby.buildings.within3km}</b> building{nearby.buildings.within3km === 1 ? "" : "s"} within 3 km · nearest <b>{km(nearby.buildings.nearest.km)}</b> away
+                  <span className="block text-xs text-muted">Probably a homestead, shed or farm workers&apos; house (white dots on the map). Detected from satellite imagery.</span>
+                </span>
+              ) : <span className="text-muted">No buildings detected within 3 km.</span>
+            ) : <span className="text-muted">Couldn&apos;t check for buildings.</span>}
+          </div>
+        </div>
 
         {price.available ? (
           <div className="mt-3 grid grid-cols-2 gap-2">

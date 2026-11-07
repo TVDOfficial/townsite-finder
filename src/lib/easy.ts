@@ -4,6 +4,7 @@ import { protectedAreaAt, nativeTitleAt } from "./arcgis";
 import { nearestHospital, nearestMajorCity, nearestPlaces, offsetMeters, randomPointIn, settlementWithin } from "./geo";
 import { USER_AGENT } from "./overpass";
 import { nearbyFromTiles, nearestPowerLine } from "./tiles";
+import { buildingsNear } from "./buildings";
 import type { LngLat, NearbyDetails, PickResult, RejectedPoint, SpotDetails, StateCode } from "./types";
 
 const CANDIDATES = 40; // random spots that pass the distance rule
@@ -56,14 +57,14 @@ async function slopeMany(points: LngLat[]) {
 function partialDetails(p: LngLat, state: StateCode, extra: Partial<SpotDetails>): SpotDetails {
   return {
     lng: p[0], lat: p[1], state,
-    protectedArea: null, nativeTitle: null, terrain: null, climate: null,
+    protectedArea: null, nativeTitle: null, parcel: null, terrain: null, climate: null,
     places: [], nearestTown: null, nearestCity: nearestMajorCity(p), hospital: nearestHospital(p),
     photos: [], errors: [],
     ...extra,
   };
 }
 
-export async function findEasiest(state: StateCode | "ALL", minKm: number, maxType: number, sizeKey: SizeKey): Promise<PickResult | null> {
+export async function findEasiest(state: StateCode | "ALL", minKm: number, maxType: number, sizeKey: SizeKey, avoidBuildings = true): Promise<PickResult | null> {
   const size = SIZES[sizeKey];
   const rejected: RejectedPoint[] = [];
   const started = Date.now();
@@ -107,28 +108,36 @@ export async function findEasiest(state: StateCode | "ALL", minKm: number, maxTy
       climate: cl ? { annualRainMm: cl.rain, hotDaysPerYear: cl.hot, frostDaysPerYear: 0, monthlyRainMm: [], monthlyMaxC: [], monthlyMinC: [], wettestMonth: 0, years: "2022–2024" } : null,
       terrain: sl ? { elevation: sl.elevation, min: sl.elevation, max: sl.elevation, meanSlope: sl.slope, maxSlope: sl.slope, flatShare: sl.slope < 3 ? 0.95 : sl.slope < 6 ? 0.7 : sl.slope < 12 ? 0.4 : 0.15, gridSize: 0, spacingM: 300, slopes: [] } : null,
     });
-    const nearby: NearbyDetails = { area: null, water: null, infrastructure: { powerLine: c.power }, errors: [] };
+    const nearby: NearbyDetails = { area: null, buildings: null, water: null, infrastructure: { powerLine: c.power }, errors: [] };
     return { c, d, nearby, score: difficulty(d, nearby, estimateTenure(d, nearby), size).total };
   });
   scored.sort((a, b) => a.score - b.score);
 
   // 3. Water, main roads and native title for the finalists, then the full difficulty score.
-  const finalists = scored.filter((s) => !s.d.protectedArea).slice(0, FINALISTS);
+  let finalists = scored.filter((s) => !s.d.protectedArea).slice(0, FINALISTS + (avoidBuildings ? 3 : 0));
   scored.filter((s) => !finalists.includes(s)).forEach((s) =>
     rejected.push({ lng: s.c.p[0], lat: s.c.p[1], reason: s.d.protectedArea ? (s.d.protectedArea.indigenous ? "aboriginal" : "protected") : "harder", label: s.d.protectedArea?.name ?? `Score ${s.score}` }),
   );
   if (!finalists.length) return null;
 
+  const withBuildings = new Set<typeof finalists[number]>();
   await Promise.all(finalists.map(async (f) => {
-    const [tiles, title] = await Promise.all([
+    const [tiles, title, bld] = await Promise.all([
       nearbyFromTiles(f.c.p[0], f.c.p[1], true).catch(() => null),
       nativeTitleAt(f.c.p[0], f.c.p[1]).catch(() => null),
+      avoidBuildings ? buildingsNear(f.c.p[0], f.c.p[1], 2).catch(() => null) : Promise.resolve(null),
     ]);
+    if (bld && bld.within3km > 0) withBuildings.add(f);
     if (tiles) f.nearby = { ...f.nearby, water: tiles.water, infrastructure: { ...tiles.infrastructure, powerLine: f.c.power } };
     f.d.nativeTitle = title;
     f.score = difficulty(f.d, f.nearby, estimateTenure(f.d, f.nearby), size).total;
   }));
   finalists.sort((a, b) => a.score - b.score);
+  // Drop spots with farmhouses or sheds within 2 km (unless every finalist has some).
+  if (withBuildings.size && withBuildings.size < finalists.length) {
+    finalists.filter((f) => withBuildings.has(f)).forEach((f) => rejected.push({ lng: f.c.p[0], lat: f.c.p[1], reason: "building", label: "Buildings within 2 km" }));
+    finalists = finalists.filter((f) => !withBuildings.has(f));
+  }
 
   const [best, ...rest] = finalists;
   rest.forEach((s) => rejected.push({ lng: s.c.p[0], lat: s.c.p[1], reason: "alternative", label: `Score ${s.score}` }));

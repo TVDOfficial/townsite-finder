@@ -120,7 +120,7 @@ const MAJOR = new Set(["motorway", "trunk", "primary", "secondary"]);
 const LOCAL = new Set(["tertiary", "minor", "track", "service"]);
 
 /** quick = low-zoom tiles only (rivers, lakes, main roads) for screening many spots. */
-export async function nearbyFromTiles(lng: number, lat: number, quick = false): Promise<Omit<NearbyDetails, "area" | "errors">> {
+export async function nearbyFromTiles(lng: number, lat: number, quick = false): Promise<Omit<NearbyDetails, "area" | "errors" | "buildings">> {
   const p: LngLat = [lng, lat];
   const [t9, t12, t13] = await Promise.all([
     tilesAround(lng, lat, 9),
