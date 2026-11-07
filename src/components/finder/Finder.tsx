@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Dices, Layers3, MapPin, RotateCcw, Radar, Sparkles, Trophy } from "lucide-react";
+import { Dices, Layers3, RotateCcw, Radar, Sparkles, Trophy } from "lucide-react";
+import { LogoMark, PORTFOLIO_URL, REPO_URL } from "../Logo";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SIZES, type SizeKey } from "@/lib/analysis";
@@ -20,7 +21,7 @@ export default function Finder() {
   const [state, setState] = useState<StateCode | "ALL">("ALL");
   const [minKm, setMinKm] = useState(25);
   const [hamlets, setHamlets] = useState(false);
-  const [avoidBuildings, setAvoidBuildings] = useState(true);
+  const [buildingKm, setBuildingKm] = useState(2);
   const [sizeKey, setSizeKey] = useState<SizeKey>("small");
   const [phase, setPhase] = useState<Phase>("idle");
   const [searchMode, setSearchMode] = useState<"random" | "easy">("random");
@@ -97,7 +98,7 @@ export default function Finder() {
     setRejected([]);
     panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     try {
-      const r = await fetch(`/api/pick?state=${state}&minKm=${minKm}&hamlets=${hamlets ? 1 : 0}&avoidBuildings=${avoidBuildings ? 1 : 0}${searchMode === "easy" ? `&mode=easy&size=${sizeKey}` : ""}`);
+      const r = await fetch(`/api/pick?state=${state}&minKm=${minKm}&hamlets=${hamlets ? 1 : 0}&buildingKm=${hamlets ? Math.min(25, minKm) : buildingKm}${searchMode === "easy" ? `&mode=easy&size=${sizeKey}` : ""}`);
       const j = await r.json();
       if (!r.ok) { setRejected(j.rejected ?? []); throw new Error(j.error ?? "Search failed"); }
       pickRef.current = j;
@@ -128,15 +129,16 @@ export default function Finder() {
   return (
     <main className="flex h-dvh flex-col-reverse overflow-hidden lg:flex-row">
       {/* ---------- Side panel ---------- */}
-      <aside ref={panelRef} className="scroll-thin relative z-10 h-[58dvh] w-full shrink-0 overflow-y-auto border-border bg-background lg:h-full lg:w-[460px] lg:border-r">
+      <aside ref={panelRef} className="scroll-thin relative z-10 flex h-[58dvh] w-full shrink-0 flex-col overflow-y-auto border-border bg-background lg:h-full lg:w-[460px] lg:border-r">
         <div className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-background/80 px-4 py-3 backdrop-blur-xl">
           <motion.div className="flex items-center gap-2" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
             <motion.div
-              className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-white"
-              animate={{ rotate: busy ? 360 : 0 }}
-              transition={busy ? { duration: 1.2, repeat: Infinity, ease: "linear" } : { duration: 0.4 }}
+              className="flex h-9 w-9 items-center justify-center"
+              animate={busy ? { y: [0, -4, 0], rotate: [0, -6, 6, 0] } : { y: 0, rotate: 0 }}
+              transition={busy ? { duration: 0.9, repeat: Infinity, ease: "easeInOut" } : { duration: 0.4 }}
+              whileHover={{ scale: 1.08, rotate: -4 }}
             >
-              <MapPin size={17} />
+              <LogoMark size={34} className="drop-shadow-sm" />
             </motion.div>
             <div>
               <div className="text-[15px] font-bold leading-none tracking-tight">Townsite</div>
@@ -216,12 +218,27 @@ export default function Finder() {
               className="slider mt-2 w-full" style={{ ["--fill" as string]: `${((minKm - 5) / 95) * 100}%` }} />
             <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-muted">
               <input type="checkbox" checked={hamlets} onChange={(e) => setHamlets(e.target.checked)} disabled={busy} className="accent-[var(--accent)]" />
-              Count tiny hamlets as towns too
+              Count hamlets, farmhouses and sheds as towns too
             </label>
-            <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-sm text-muted">
-              <input type="checkbox" checked={avoidBuildings} onChange={(e) => setAvoidBuildings(e.target.checked)} disabled={busy} className="accent-[var(--accent)]" />
-              Avoid spots with farmhouses or sheds within 2 km
-            </label>
+            <AnimatePresence initial={false}>
+              {hamlets ? (
+                <motion.p key="same" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-1 overflow-hidden text-[11px] text-muted">
+                  Spots will also be at least {Math.min(25, minKm)} km from any building{minKm > 25 ? " (buildings are checked out to 25 km)" : ""}.
+                </motion.p>
+              ) : (
+                <motion.div key="own" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="mt-4 flex items-baseline justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted">Away from farmhouses &amp; sheds</label>
+              <motion.span key={buildingKm} initial={{ scale: 1.3, color: "var(--accent)" }} animate={{ scale: 1, color: "var(--foreground)" }} className="text-sm font-bold tabular-nums">
+                {buildingKm === 0 ? "Off" : `${buildingKm} km`}
+              </motion.span>
+            </div>
+            <input type="range" min={0} max={25} step={1} value={buildingKm} disabled={busy} onChange={(e) => setBuildingKm(+e.target.value)}
+              className="slider mt-2 w-full" style={{ ["--fill" as string]: `${(buildingKm / 25) * 100}%` }} />
+            {buildingKm > 4 && <p className="mt-1 text-[11px] text-muted">Big distances take longer to check and may miss very small sheds.</p>}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <motion.button
               onClick={find} disabled={busy}
@@ -318,6 +335,13 @@ export default function Finder() {
             )}
           </AnimatePresence>
         </div>
+        <footer className="mt-auto flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-border px-4 py-3 text-xs text-muted">
+          <span>Created by <a href={PORTFOLIO_URL} target="_blank" rel="noreferrer" className="font-semibold text-foreground hover:text-accent">Mathew Pittard</a></span>
+          <span aria-hidden>·</span>
+          <a href={PORTFOLIO_URL} target="_blank" rel="noreferrer" className="hover:text-accent hover:underline">Portfolio</a>
+          <span aria-hidden>·</span>
+          <a href={REPO_URL} target="_blank" rel="noreferrer" className="hover:text-accent hover:underline">GitHub</a>
+        </footer>
       </aside>
 
       {/* ---------- Map ---------- */}

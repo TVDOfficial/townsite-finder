@@ -1,12 +1,16 @@
+<p align="center"><img src="public/logo.svg" width="96" alt="Townsite logo"></p>
+
 # Townsite
 
 Find a random spot in Australia that's well away from existing towns, see what it would take to build a town there, then plan it in 3D.
 
 **Live site:** https://townsite-finder.vercel.app
 
+Created by [Mathew Pittard](https://mathewpittard.vercel.app).
+
 ## Features
 
-- **Finder** (`/`): pick a state and a minimum distance from towns, then hit *Find me a spot*. Rejected points flash on the map before it flies to the winner.
+- **Finder** (`/`): pick a state, a minimum distance from towns and from farm buildings (up to 25 km), then hit *Find me a spot*. Rejected points flash on the map before it flies to the winner.
 - **Easiest spot mode**: scores 40 random candidates on power, water, roads, rainfall, slope and likely land type, and picks the easiest for your town size. Runners-up are shown so you can compare.
 - **Spot details**: terrain and slope map, water nearby, roads, power lines, nearest town, city and hospital, climate, photos, an estimated land type and price, native title, a difficulty score, and step-by-step guides for buying the land and building a town.
 - **Share links**: every spot has its own URL (`/?lat=…&lng=…&size=…`).
@@ -50,7 +54,7 @@ Fetched live, per spot:
 | What | Source |
 |---|---|
 | Parks and reserves | CAPAD 2024 (DCCEEW ArcGIS service) |
-| Property parcels (lot/plan, tenure, area, outline) | Queensland and NSW cadastre services |
+| Property parcels | QLD cadastre (lot/plan, tenure), NSW Spatial Services (lot/plan), Vicmap Property + Crown Land Tenure, Tasmanian LIST (title, tenure, property name), Landgate SLIP public cadastre + pastoral stations (WA), ACTmapi blocks, NTLIS cadastre WMS (tenure, owner category, unimproved value). SA's cadastre isn't open data. |
 | Nearby buildings (homesteads, sheds) | Overture Maps buildings, incl. Microsoft ML footprints (PMTiles on S3) |
 | Native title | National Native Title Tribunal ArcGIS service |
 | Elevation | Open-Meteo (Copernicus 90 m) in the finder; AWS Terrain Tiles in the planner |
@@ -66,7 +70,7 @@ API responses send `Cache-Control: s-maxage` headers so Vercel's CDN caches each
 
 ## Limitations
 
-- Almost all land in Australia is owned or leased. In Queensland and NSW the app shows the actual property parcel (and in Queensland its tenure); owner names need a paid title search. Other states still use the estimate below.
-- Land type outside Queensland is a rule-based guess from state, rainfall and location. ABARES' national land tenure service is offline, so check the real parcel with the state viewer the app links to. Live state lookups are planned.
+- Almost all land in Australia is owned or leased. The app shows the actual property parcel in every state and territory except South Australia (whose cadastre isn't open data). Owner names need a paid title search.
+- Where a state doesn't publish tenure (NSW, WA freehold, SA), land type is a rule-based guess from state, rainfall and location. ABARES' national land tenure service is offline, so check the real parcel with the state viewer the app links to. Live state lookups are planned.
 - Prices and build costs are rough ranges for curiosity, not quotes or advice.
 - Post-processing (ambient occlusion, bloom) is disabled because `@react-three/postprocessing` and drei's `<Environment>` don't work with three r187.

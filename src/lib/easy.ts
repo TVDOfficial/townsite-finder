@@ -4,7 +4,7 @@ import { protectedAreaAt, nativeTitleAt } from "./arcgis";
 import { nearestHospital, nearestMajorCity, nearestPlaces, offsetMeters, randomPointIn, settlementWithin } from "./geo";
 import { USER_AGENT } from "./overpass";
 import { nearbyFromTiles, nearestPowerLine } from "./tiles";
-import { buildingsNear } from "./buildings";
+import { hasBuildingWithin } from "./buildings";
 import type { LngLat, NearbyDetails, PickResult, RejectedPoint, SpotDetails, StateCode } from "./types";
 
 const CANDIDATES = 40; // random spots that pass the distance rule
@@ -64,7 +64,8 @@ function partialDetails(p: LngLat, state: StateCode, extra: Partial<SpotDetails>
   };
 }
 
-export async function findEasiest(state: StateCode | "ALL", minKm: number, maxType: number, sizeKey: SizeKey, avoidBuildings = true): Promise<PickResult | null> {
+export async function findEasiest(state: StateCode | "ALL", minKm: number, maxType: number, sizeKey: SizeKey, buildingKm = 2): Promise<PickResult | null> {
+  const avoidBuildings = buildingKm > 0;
   const size = SIZES[sizeKey];
   const rejected: RejectedPoint[] = [];
   const started = Date.now();
@@ -125,17 +126,17 @@ export async function findEasiest(state: StateCode | "ALL", minKm: number, maxTy
     const [tiles, title, bld] = await Promise.all([
       nearbyFromTiles(f.c.p[0], f.c.p[1], true).catch(() => null),
       nativeTitleAt(f.c.p[0], f.c.p[1]).catch(() => null),
-      avoidBuildings ? buildingsNear(f.c.p[0], f.c.p[1], 2).catch(() => null) : Promise.resolve(null),
+      avoidBuildings ? hasBuildingWithin(f.c.p[0], f.c.p[1], buildingKm).catch(() => null) : Promise.resolve(null),
     ]);
-    if (bld && bld.within3km > 0) withBuildings.add(f);
+    if (bld?.found) withBuildings.add(f);
     if (tiles) f.nearby = { ...f.nearby, water: tiles.water, infrastructure: { ...tiles.infrastructure, powerLine: f.c.power } };
     f.d.nativeTitle = title;
     f.score = difficulty(f.d, f.nearby, estimateTenure(f.d, f.nearby), size).total;
   }));
   finalists.sort((a, b) => a.score - b.score);
-  // Drop spots with farmhouses or sheds within 2 km (unless every finalist has some).
+  // Drop spots with farmhouses or sheds too close (unless every finalist has some).
   if (withBuildings.size && withBuildings.size < finalists.length) {
-    finalists.filter((f) => withBuildings.has(f)).forEach((f) => rejected.push({ lng: f.c.p[0], lat: f.c.p[1], reason: "building", label: "Buildings within 2 km" }));
+    finalists.filter((f) => withBuildings.has(f)).forEach((f) => rejected.push({ lng: f.c.p[0], lat: f.c.p[1], reason: "building", label: `Buildings within ${buildingKm} km` }));
     finalists = finalists.filter((f) => !withBuildings.has(f));
   }
 

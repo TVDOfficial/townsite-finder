@@ -40,6 +40,48 @@ function tileOf(lng: number, lat: number) {
   return { x: Math.floor(((lng + 180) / 360) * n), y: Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n) };
 }
 
+/**
+ * Is there any building within `km` of the point? Searches tiles in rings outward from the
+ * centre and stops at the first hit, so busy areas are rejected quickly.
+ * Beyond 4 km it uses zoom-13 tiles, which drop some very small sheds.
+ */
+export async function hasBuildingWithin(lng: number, lat: number, km: number): Promise<{ found: boolean; km?: number }> {
+  const pm = await getSource();
+  const z = km <= 4 ? 14 : 13;
+  const n = 2 ** z;
+  const r = (lat * Math.PI) / 180;
+  const fx = ((lng + 180) / 360) * n, fy = ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n;
+  const cx = Math.floor(fx), cy = Math.floor(fy);
+  const tileKm = (40075 * Math.cos(r)) / n;
+  const rings = Math.ceil(km / tileKm);
+  const p: LngLat = [lng, lat];
+  for (let ring = 0; ring <= rings; ring++) {
+    const cells: [number, number][] = [];
+    for (let dx = -ring; dx <= ring; dx++)
+      for (let dy = -ring; dy <= ring; dy++)
+        if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) cells.push([cx + dx, cy + dy]);
+    let nearest = Infinity;
+    // Fetch a ring at a time (max ~100 tiles in flight).
+    for (let i = 0; i < cells.length; i += 100) {
+      await Promise.all(cells.slice(i, i + 100).map(async ([x, y]) => {
+        const tile = await pm.getZxy(z, x, y, AbortSignal.timeout(8000));
+        if (!tile) return;
+        const layer = new VectorTile(new PbfReader(new Uint8Array(tile.data))).layers.building;
+        if (!layer) return;
+        for (let k = 0; k < layer.length; k++) {
+          const g = layer.feature(k).toGeoJSON(x, y, z).geometry;
+          const ring0 = (g.type === "Polygon" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0][0] : null) as LngLat[] | null;
+          if (!ring0?.length) continue;
+          const d = haversineKm(p, ring0[0]);
+          if (d < nearest) nearest = d;
+        }
+      }));
+    }
+    if (nearest <= km) return { found: true, km: nearest };
+  }
+  return { found: false };
+}
+
 /** Buildings within ~3 km of a point. */
 export async function buildingsNear(lng: number, lat: number, radiusKm = 3): Promise<Buildings> {
   const pm = await getSource();

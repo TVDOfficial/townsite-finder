@@ -60,7 +60,11 @@ export interface NativeTitle {
 export interface Parcel {
   state: StateCode;
   id: string; // e.g. "Lot 35 on RP851332"
-  tenure?: string; // QLD only
+  tenure?: string; // official tenure where the state publishes it
+  name?: string; // property / station / reserve name
+  owner?: string; // ownership category (NT)
+  value?: number; // government land valuation in $ (NT unimproved capital value)
+  source: string; // which register this came from
   areaHa: number;
   lga?: string;
   locality?: string;

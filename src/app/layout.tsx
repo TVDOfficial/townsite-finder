@@ -7,6 +7,8 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "Townsite — find a place to build your own town",
+  authors: [{ name: "Mathew Pittard", url: "https://mathewpittard.vercel.app" }],
+  creator: "Mathew Pittard",
   description:
     "Pick a random spot in Australia that's away from existing towns, see its water, terrain, land type and price, then plan your own town in 3D.",
 };

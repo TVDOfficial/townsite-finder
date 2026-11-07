@@ -44,14 +44,28 @@ export function estimateTenure(d: SpotDetails, n: NearbyDetails | null): Tenure 
   if (d.nativeTitle?.determination && /exclusive\)?$/i.test(d.nativeTitle.determination.outcome) && !/non-exclusive/i.test(d.nativeTitle.determination.outcome))
     return { key: "aboriginal", label: "Exclusive native title", confidence: "high", blocked: true, why: `Exclusive native title held by ${d.nativeTitle.determination.name}.` };
 
-  // Queensland publishes the real tenure of every parcel.
-  const qt = d.parcel?.tenure;
-  if (qt) {
-    const where = `${d.parcel!.id}, ${Math.round(d.parcel!.areaHa).toLocaleString()} ha (Queensland cadastre).`;
-    if (/freehold/i.test(qt)) return { key: "freehold", label: "Freehold (private property)", confidence: "high", blocked: false, why: `Privately owned: ${where}` };
-    if (/lease/i.test(qt)) return { key: "pastoral", label: "State leasehold", confidence: "high", blocked: false, why: `${qt}: ${where}` };
-    if (/national park|forest|reserve|conservation/i.test(qt)) return { key: "protected", label: qt, confidence: "high", blocked: true, why: `${qt}: ${where}` };
-    if (/state land|unallocated/i.test(qt)) return { key: "crown", label: "Unallocated State land", confidence: "high", blocked: false, why: `${qt}: ${where}` };
+  // Most states publish the real tenure of each parcel; use it when we have it.
+  const pt = d.parcel?.tenure;
+  if (pt) {
+    const p = d.parcel!;
+    const where = `${p.name ? `${p.name}, ` : ""}${p.id}${p.areaHa ? `, ${Math.round(p.areaHa).toLocaleString()} ha` : ""} (${p.source}).`;
+    const all = `${pt} ${p.owner ?? ""} ${p.name ?? ""}`;
+    if (/aboriginal|alra|land trust|indigenous/i.test(all))
+      return { key: "aboriginal", label: "Aboriginal land", confidence: "high", blocked: true, why: `Held by Traditional Owners: ${where}` };
+    if (/national park|conservation|nature reserve|parks and wildlife|state forest|reserve/i.test(all))
+      return { key: "protected", label: "Public reserve or forest", confidence: "high", blocked: true, why: `${pt}: ${where}` };
+    if (/act crown lease/i.test(pt))
+      return { key: "act-lease", label: "ACT Crown lease", confidence: "high", blocked: false, why: `All ACT land is leased from the government: ${where}` };
+    if (/pastoral/i.test(pt))
+      return { key: "pastoral", label: p.name ? `Pastoral lease (${p.name})` : "Pastoral lease", confidence: "high", blocked: false, why: `${pt}: ${where}` };
+    if (/lease/i.test(pt))
+      return { key: "pastoral", label: "State leasehold", confidence: "high", blocked: false, why: `${pt}: ${where}` };
+    if (/authority land|timber/i.test(all))
+      return { key: "crown", label: "Government-owned land", confidence: "high", blocked: false, why: `${pt}: ${where}` };
+    if (/crown|state land|unallocated|vacant/i.test(pt))
+      return { key: "crown", label: "Crown land", confidence: "high", blocked: false, why: `${pt}: ${where}` };
+    if (/freehold/i.test(pt))
+      return { key: "freehold", label: "Freehold (private property)", confidence: "high", blocked: false, why: `Privately owned: ${where}` };
   }
 
   const s = d.state;
@@ -109,6 +123,18 @@ export function estimatePrice(d: SpotDetails, tenure: Tenure, size: TownSize): P
     return { perHaLow: 0, perHaHigh: 0, totalLow: 0, totalHigh: 0, extrasLow: 0, extrasHigh: 0, available: false, note: "This land isn't normally for sale." };
   }
   let low: number, high: number, note: string;
+  const valued = d.parcel?.value && d.parcel.areaHa > 0 ? d.parcel.value / d.parcel.areaHa : 0;
+  if (valued) {
+    // NT publishes the Valuer-General's unimproved value; sales usually go for more.
+    low = Math.max(1, Math.round(valued * 0.9));
+    high = Math.max(2, Math.round(valued * 1.6));
+    const totalLow = low * size.landHa, totalHigh = high * size.landHa;
+    return {
+      perHaLow: low, perHaHigh: high, totalLow, totalHigh,
+      extrasLow: Math.round(totalLow * 0.04 + 40000), extrasHigh: Math.round(totalHigh * 0.06 + 200000), available: true,
+      note: `Based on the official unimproved value of this property ($${Math.round(d.parcel!.value!).toLocaleString()} for ${Math.round(d.parcel!.areaHa).toLocaleString()} ha). Sale prices are usually higher.`,
+    };
+  }
   if (tenure.key === "pastoral") {
     [low, high] = rain < 200 ? [10, 60] : rain < 350 ? [30, 250] : [150, 900];
     note = "Price to buy the lease (the station). Turning part of it into freehold for a town costs more, and the state has to agree.";

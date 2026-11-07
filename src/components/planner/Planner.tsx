@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { estimatePrice, estimateTenure, SIZES, type SizeKey } from "@/lib/analysis";
 import type { NearbyDetails, SpotDetails } from "@/lib/types";
 import { money } from "../ui";
+import { LogoMark, PORTFOLIO_URL, REPO_URL } from "../Logo";
 import { computeMeters, itemCapacity } from "./capacity";
 import {
   CATALOG, CATALOG_BY_TYPE, CATEGORIES, EARTHWORKS_PER_M3, JUNCTIONS, RATES_PER_DWELLING, ROADS, streetName, townName,
@@ -484,7 +485,7 @@ export default function Planner() {
           <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.6, type: "spring", stiffness: 200, damping: 24 }}
             className="absolute inset-x-3 top-3 z-30 flex flex-wrap items-center gap-2">
             <Link href={`/?lat=${plan.lat}&lng=${plan.lng}&size=${plan.size}`} className="glass flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium hover:bg-white/20">
-              <ArrowLeft size={16} /> Back
+              <ArrowLeft size={16} /> <LogoMark size={20} /> Back
             </Link>
             <div className="glass relative flex items-center gap-2 rounded-xl px-3 py-1.5">
               <div>
@@ -567,6 +568,10 @@ export default function Planner() {
             </div>
             <div className="border-t border-white/10 p-2 text-[11px] leading-relaxed text-white/55">
               Left-drag pan · right-drag rotate · scroll zoom · click things to select · <b className="text-white/80">G</b> grid · <b className="text-white/80">Ctrl+Z</b> undo
+              <div className="mt-1.5 flex gap-2 text-white/45">
+                <span>By <a href={PORTFOLIO_URL} target="_blank" rel="noreferrer" className="text-white/75 hover:text-emerald-300">Mathew Pittard</a></span>·
+                <a href={REPO_URL} target="_blank" rel="noreferrer" className="hover:text-emerald-300">GitHub</a>
+              </div>
             </div>
           </motion.aside>
 

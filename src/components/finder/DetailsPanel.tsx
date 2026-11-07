@@ -12,6 +12,19 @@ import { acquisitionSteps, buildSteps, GENERAL_LINKS, STATE_INFO } from "@/lib/g
 import { STATE_NAMES, type NearbyDetails, type NearFeature, type SpotDetails } from "@/lib/types";
 import { Badge, Bar, Card, CountUp, km, money, rise, ScoreRing, scoreColor, Skeleton, Stat, stagger } from "../ui";
 
+const TITLES_OFFICE: Record<string, string> = {
+  QLD: "Titles Queensland", NSW: "NSW Land Registry Services", VIC: "LANDATA", TAS: "Land Tasmania (the LIST)",
+  WA: "Landgate", NT: "the NT Land Titles Office", ACT: "Access Canberra", SA: "Land Services SA",
+};
+const OWNERSHIP_NOTE: Record<string, string> = {
+  freehold: "It's privately owned, so you'd have to buy it from the owner.",
+  pastoral: "It's a pastoral lease on government land. You'd buy the lease from the station owner, and the state would have to agree to a town.",
+  crown: "It's government land. You'd apply to the state to buy or lease it.",
+  "act-lease": "ACT land can't be bought outright. It's leased from the ACT Government.",
+  aboriginal: "It's held by Traditional Owners and isn't for sale.",
+  protected: "It's a reserve or forest and isn't for sale.",
+};
+
 const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 
 interface Props {
@@ -139,18 +152,30 @@ export default function DetailsPanel({ details: d, nearby, nearbyLoading, sizeKe
           <div className="flex items-center gap-2 font-medium"><Home size={15} className="text-muted" /> Whose land is this?</div>
           {d.parcel ? (
             <div className="mt-1.5 space-y-1">
-              <div><b>{d.parcel.id}</b>{d.parcel.tenure ? ` · ${d.parcel.tenure}` : ""} · {Math.round(d.parcel.areaHa).toLocaleString()} ha
-                {d.parcel.lga ? ` · ${d.parcel.lga}` : ""}</div>
+              <div>
+                <b>{d.parcel.name ?? d.parcel.id}</b>
+                {d.parcel.name ? <span className="text-muted"> · {d.parcel.id}</span> : null}
+                {d.parcel.areaHa ? ` · ${Math.round(d.parcel.areaHa).toLocaleString()} ha` : ""}
+                {d.parcel.lga ? ` · ${d.parcel.lga}` : ""}
+              </div>
+              {d.parcel.tenure && <div className="text-xs"><span className="text-muted">Tenure:</span> {d.parcel.tenure}</div>}
+              {d.parcel.value && <div className="text-xs"><span className="text-muted">Official land value:</span> {money(d.parcel.value)}</div>}
               <p className="text-muted">
-                This spot is inside a surveyed property (orange outline on the map).
-                {d.parcel.tenure && /freehold/i.test(d.parcel.tenure) ? " It's privately owned, so you'd have to buy it from the owner." : " You'd deal with whoever holds it, or the state."}
-                {" "}Owner names aren&apos;t public: a title search from {d.parcel.state === "QLD" ? "Titles Queensland" : "NSW Land Registry Services"} costs about $20–40.
+                {d.parcel.outline.length ? "This spot is inside the property outlined in orange on the map. " : "This spot is inside this property. "}
+                {OWNERSHIP_NOTE[tenure.key]}
+                {" "}Owner names aren&apos;t public: a title search from {TITLES_OFFICE[d.parcel.state]} costs about $20–40.
               </p>
-              {d.parcel.link && <a href={d.parcel.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">View this parcel on the Queensland SmartMap <ExternalLink size={11} /></a>}
+              <div className="flex flex-wrap gap-x-3">
+                {d.parcel.link && <a href={d.parcel.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">Open in the state land register <ExternalLink size={11} /></a>}
+                <span className="text-[11px] text-muted">Source: {d.parcel.source}</span>
+              </div>
             </div>
           ) : (
             <p className="mt-1.5 text-muted">
-              Almost all land in Australia is owned or leased, even when it looks empty. {d.state === "QLD" || d.state === "NSW" ? "No parcel was found at this exact point." : `Property boundaries for ${STATE_NAMES[state]} aren't shown here yet; check ${STATE_INFO[state].viewer.label}.`}
+              Almost all land in Australia is owned or leased, even when it looks empty.{" "}
+              {d.state === "SA"
+                ? `South Australia's property boundaries aren't open data, so check ${STATE_INFO.SA.viewer.label}.`
+                : `No surveyed parcel was found at this exact point (it may be a road or unallocated land). Check ${STATE_INFO[state].viewer.label}.`}
             </p>
           )}
           <div className="mt-2 border-t border-border pt-2">
@@ -329,9 +354,10 @@ export default function DetailsPanel({ details: d, nearby, nearbyLoading, sizeKe
       </Card>
 
       <motion.p variants={rise} className="px-2 pb-6 text-center text-[11px] leading-relaxed text-muted">
-        Rough estimates for curiosity only, not legal, financial or planning advice. Land type is estimated from
-        location and rainfall; check the real parcel with the state before relying on it. Data: OpenStreetMap,
-        OpenFreeMap, Open-Meteo, CAPAD 2024, National Native Title Tribunal, Wikimedia Commons.
+        Rough estimates for curiosity only, not legal, financial or planning advice. Property and tenure come from
+        state land registers where they publish them; otherwise land type is estimated. Check with the state before relying on it.
+        Data: state cadastres (QLD, NSW, VIC, TAS, WA, ACT, NT), OpenStreetMap, OpenFreeMap, Overture Maps, Open-Meteo, CAPAD 2024,
+        National Native Title Tribunal, Wikimedia Commons.
       </motion.p>
     </motion.div>
   );

@@ -12,6 +12,7 @@ import { CATALOG_BY_TYPE, JUNCTIONS, ROADS, type Category } from "./catalog";
 import { boundaryAreaHa, boundaryCorners, corners, insideBoundary, type Boundary, type Junction, type JunctionType } from "./geometry";
 import type { Totals } from "./Panels";
 import type { PlanData } from "./storage";
+import { LogoMark, PORTFOLIO_URL } from "../Logo";
 
 const CAT_COLOR: Record<Category, string> = {
   Housing: "#e8a33d", Community: "#2f80ed", Commercial: "#c94f3d", Industry: "#7f8c8d", Utilities: "#16a085", Transport: "#8e44ad", Nature: "#27ae60",
@@ -59,7 +60,7 @@ export default function Report({ plan, totals, meters, roadInfo, junctions, junc
       <div className="report mx-auto my-6 max-w-[860px] bg-white px-12 py-10 shadow-xl print:my-0 print:shadow-none">
         {/* ---------- Cover ---------- */}
         <section className="report-page">
-          <div className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">Town plan report</div>
+          <div className="flex items-center gap-2"><LogoMark size={28} /><div className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">Townsite · Town plan report</div></div>
           <h1 className="mt-2 text-4xl font-bold tracking-tight">{plan.name || "Unnamed town"}</h1>
           <p className="mt-1 text-neutral-600">
             Proposed {size.label.toLowerCase()} · {site?.places[0] ? `${km(site.places[0].km)} from ${site.places[0].name}, ` : ""}{STATE_NAMES[state]}
@@ -213,7 +214,7 @@ export default function Report({ plan, totals, meters, roadInfo, junctions, junc
 
           <h2 className="report-h2">Notes</h2>
           <p className="text-xs leading-relaxed text-neutral-500">
-            This is a concept-level plan generated with Townsite. Costs are rough 2025 Australian regional estimates and capacity figures use typical averages
+            This is a concept-level plan generated with Townsite, created by Mathew Pittard ({PORTFOLIO_URL}). Costs are rough 2025 Australian regional estimates and capacity figures use typical averages
             (about 300 L of water and 0.25 kW of power per person). Land type and price are estimated from location and rainfall. Confirm all figures with
             the state government, local council, utilities and qualified professionals before relying on them. Data sources: OpenStreetMap, OpenFreeMap,
             Open-Meteo, Esri World Imagery, AWS Terrain Tiles, CAPAD 2024, National Native Title Tribunal.
