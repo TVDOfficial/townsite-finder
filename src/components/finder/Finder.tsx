@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Dices, Layers3, RotateCcw, Radar, Sparkles, Trophy } from "lucide-react";
+import { Dices, Hammer, Layers3, RotateCcw, Radar, Sparkles, Trophy } from "lucide-react";
+import Link from "next/link";
 import { LogoMark, PORTFOLIO_URL, REPO_URL, VERSION_LABEL } from "../Logo";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -356,6 +357,21 @@ export default function Finder() {
               className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-xl bg-black/60 px-3 py-2 text-xs font-semibold text-white backdrop-blur-md hover:bg-black/75">
               <Layers3 size={14} /> {terrain3d ? "3D terrain on" : "3D terrain off"}
             </motion.button>
+          )}
+        </AnimatePresence>
+        {/* Always-visible shortcut to the planner, next to the map's zoom controls */}
+        <AnimatePresence>
+          {spot && phase === "done" && (
+            <motion.div key={`${spot.lat},${spot.lng}`} initial={{ opacity: 0, y: -12, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -12 }}
+              transition={{ delay: 0.4, type: "spring", stiffness: 260, damping: 20 }} className="absolute right-14 top-3 z-10">
+              <Link href={`/plan?lat=${spot.lat.toFixed(4)}&lng=${spot.lng.toFixed(4)}&size=${sizeKey}`}>
+                <motion.span whileHover={{ scale: 1.05, y: -1 }} whileTap={{ scale: 0.96 }}
+                  className="relative flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40">
+                  <motion.span className="absolute inset-0 rounded-xl ring-2 ring-emerald-300" animate={{ opacity: [0.7, 0, 0.7], scale: [1, 1.12, 1] }} transition={{ duration: 2.2, repeat: Infinity }} />
+                  <Hammer size={16} /> Plan this town
+                </motion.span>
+              </Link>
+            </motion.div>
           )}
         </AnimatePresence>
         <AnimatePresence>
