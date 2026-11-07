@@ -302,3 +302,20 @@ export function dragCorner(b: Boundary, corner: number, x: number, z: number): B
 }
 
 export const boundaryAreaHa = (b: Boundary) => (b.w * b.d) / 10000;
+
+/** Drag one side of the boundary (0 top, 1 right, 2 bottom, 3 left), keeping the opposite side fixed. */
+export function dragEdge(b: Boundary, edge: number, x: number, z: number): Boundary {
+  const c = Math.cos(b.rot), s = Math.sin(b.rot);
+  const dx = x - b.cx, dz = z - b.cz;
+  const lu = dx * c - dz * s, lv = dx * s + dz * c;
+  let u0 = -b.w / 2, u1 = b.w / 2, v0 = -b.d / 2, v1 = b.d / 2;
+  if (edge === 0) v0 = Math.min(lv, v1 - 100);
+  if (edge === 2) v1 = Math.max(lv, v0 + 100);
+  if (edge === 3) u0 = Math.min(lu, u1 - 100);
+  if (edge === 1) u1 = Math.max(lu, u0 + 100);
+  const mu = (u0 + u1) / 2, mv = (v0 + v1) / 2;
+  return { ...b, w: u1 - u0, d: v1 - v0, cx: b.cx + mu * c + mv * s, cz: b.cz - mu * s + mv * c };
+}
+
+/** Round the boundary's size to tidy 10 m steps. */
+export const tidyBoundary = (b: Boundary): Boundary => ({ ...b, w: Math.max(100, Math.round(b.w / 10) * 10), d: Math.max(100, Math.round(b.d / 10) * 10) });

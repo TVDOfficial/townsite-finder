@@ -18,10 +18,11 @@ import {
 } from "./catalog";
 import {
   addRoadToNetwork, closestOnSegment, corners, defaultJunctionType, findJunctions, JUNCTION_COST, junctionTypeOf, overlaps, placementCost, roadStats, roadUpkeep,
-  siteWorks, snapItem, snapToGrid, smoothPath, insideBoundary, dragCorner, boundaryAreaHa,
+  siteWorks, snapItem, snapToGrid, smoothPath, insideBoundary, dragCorner, dragEdge, tidyBoundary, boundaryAreaHa,
   type Boundary, type JunctionType, type Placed, type Road,
 } from "./geometry";
 import Report from "./Report";
+import type { BoundaryHandle } from "./Boundary";
 import SimPanel from "./SimPanel";
 import { capacityOf, newSim, step, takeLoan, type LogEntry } from "./sim";
 import { blockLayout, fits, frameOf, toLocal, townLayout, type Layout, type LotFill } from "./layout";
@@ -58,6 +59,7 @@ export default function Planner() {
   const [simPlaying, setSimPlaying] = useState(false);
   const [simSpeed, setSimSpeed] = useState(3);
   const [showSimStart, setShowSimStart] = useState(false);
+  const [simAuto, setSimAuto] = useState(true);
   const simNews = useRef<LogEntry[]>([]);
   const [period, setPeriod] = useState<Period>("year");
   const [hoverInfo, setHoverInfo] = useState<{ ok: boolean; reason?: string } | null>(null);
@@ -70,7 +72,7 @@ export default function Planner() {
   const history = useRef<Snapshot[]>([]);
   const [curvy, setCurvy] = useState(true);
   const [editBoundary, setEditBoundary] = useState(false);
-  const [boundaryDrag, setBoundaryDrag] = useState<{ kind: number | "move"; ox: number; oz: number } | null>(null);
+  const [boundaryDrag, setBoundaryDrag] = useState<{ kind: BoundaryHandle; ox: number; oz: number } | null>(null);
   const [site, setSite] = useState<SpotDetails | null>(null);
   const [nearby, setNearby] = useState<NearbyDetails | null>(null);
   const [report, setReport] = useState<string | null | false>(false); // false = closed; otherwise the 3D snapshot (or null)
@@ -148,8 +150,11 @@ export default function Planner() {
     setPlan((p) => {
       if (!p?.boundary) return p;
       const b = p.boundary;
-      const nb: Boundary = boundaryDrag.kind === "move" ? { ...b, cx: x - boundaryDrag.ox, cz: z - boundaryDrag.oz } : dragCorner(b, boundaryDrag.kind, x, z);
-      return { ...p, boundary: nb };
+      const k = boundaryDrag.kind;
+      const nb: Boundary = k === "move"
+        ? { ...b, cx: x - boundaryDrag.ox, cz: z - boundaryDrag.oz }
+        : typeof k === "number" ? dragCorner(b, k, x, z) : dragEdge(b, Number(k.slice(1)), x, z);
+      return { ...p, boundary: k === "move" ? nb : tidyBoundary(nb) };
     });
   }, [boundaryDrag]);
 
@@ -516,6 +521,24 @@ export default function Planner() {
     }, 60);
   };
 
+  /** Switch the town size. Offer to resize the boundary to fit the new size. */
+  const changeSize = (size: SizeKey) => {
+    if (!plan || size === plan.size || !terrain) return;
+    const side = Math.min(Math.sqrt(SIZES[size].landHa * 10000), terrain.size - 300);
+    const resize = confirm(`Switch to a ${SIZES[size].label.toLowerCase()}? Also resize the town boundary to about ${(side / 1000).toFixed(1)} × ${(side / 1000).toFixed(1)} km to fit?`);
+    setPlan((p) => p && { ...p, size, boundary: resize && p.boundary ? { ...p.boundary, w: Math.round(side), d: Math.round(side) } : p.boundary });
+  };
+
+  /** A random town with everything a town of this size needs. Replaces what's there. */
+  const autoTown = (restartSim: boolean) => {
+    if (!terrain || !plan) return;
+    const lay = townLayout(terrain, plan.boundary, plan.size, [], Math.random);
+    const n = applyLayout(lay, true, [plan.boundary?.cx ?? 0, plan.boundary?.cz ?? 0]);
+    if (restartSim) setPlan((p) => p && { ...p, sim: newSim(p.sim?.startBudget ?? 25_000_000) });
+    flash(`New random town: ${n} buildings for about ${lay.people.toLocaleString()} people`, "good");
+    return n;
+  };
+
   // ---------- Towns ----------
   const openTowns = () => { setTowns(listTowns()); setShowTowns((s) => !s); };
   const openTown = (t: TownMeta) => {
@@ -729,7 +752,8 @@ export default function Planner() {
           {/* ---------- Budget ---------- */}
           <motion.aside initial={{ x: 340, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.9, type: "spring", stiffness: 180, damping: 24 }}
             className="glass scroll-thin absolute bottom-3 right-3 top-20 z-20 hidden w-80 flex-col gap-3 overflow-y-auto rounded-2xl p-4 md:flex">
-            <BudgetPanel totals={totals} meters={meters} period={period} setPeriod={setPeriod} goalPeople={goal.people} goalLabel={`a ${goal.label.toLowerCase()} (${goal.peopleRange})`} />
+            <BudgetPanel totals={totals} meters={meters} period={period} setPeriod={setPeriod} goalPeople={goal.people} goalLabel={`a ${goal.label.toLowerCase()} (${goal.peopleRange})`}
+              sizeKey={plan.size} onSize={changeSize} />
             {plan.boundary && (
               <BoundaryPanel
                 b={plan.boundary} max={terrain.size - 200} editing={editBoundary} setEditing={setEditBoundary}
@@ -815,6 +839,7 @@ export default function Planner() {
           <SimPanel
             sim={sim} capacity={capacityOf(placed)} playing={simPlaying} setPlaying={setSimPlaying} speed={simSpeed} setSpeed={setSimSpeed}
             onLoan={() => setPlan((p) => (p?.sim ? { ...p, sim: takeLoan(p.sim) } : p))}
+            onAutoTown={() => { if (confirm("Replace this town with a brand-new random one and restart the simulation?")) { setSimPlaying(false); autoTown(true); setTimeout(() => setSimPlaying(true), 2800); } }}
             onEnd={() => { if (confirm("End the simulation? Your town stays, but the simulated years, money and badges are cleared.")) { setSimPlaying(false); setPlan((p) => p && { ...p, sim: undefined }); } }}
           />
         )}
@@ -833,11 +858,25 @@ export default function Planner() {
                 <li>• While it runs, new council buildings and roads cost money. Private and state buildings are paid for by others.</li>
                 <li>• Expect droughts, bushfires, heatwaves, booms and grants. Earn badges for challenges.</li>
               </ul>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl bg-white/5 p-3 text-sm">
+                <input type="checkbox" checked={simAuto} onChange={(e) => setSimAuto(e.target.checked)} className="mt-0.5 accent-emerald-400" />
+                <span><b>🎲 Auto-build a random town first</b><span className="block text-xs text-white/55">A new layout every time, with homes, a town centre, schools, jobs and all the utilities a {goal.label.toLowerCase()} needs. Replaces what&apos;s here.</span></span>
+              </label>
+              <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg bg-white/5 p-0.5 text-[11px] font-semibold">
+                {Object.values(SIZES).map((s) => (
+                  <button key={s.key} onClick={() => setPlan((p) => p && { ...p, size: s.key })} className={`rounded-md px-1 py-1 ${plan.size === s.key ? "bg-emerald-500/40" : "hover:bg-white/10"}`}>{s.label}</button>
+                ))}
+              </div>
               <div className="mt-3 text-xs font-semibold uppercase tracking-wider text-white/50">Starting council budget</div>
               <div className="mt-1.5 grid grid-cols-3 gap-2">
                 {[[10_000_000, "Tight"], [25_000_000, "Normal"], [60_000_000, "Generous"]].map(([amt, label]) => (
                   <motion.button key={label} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
-                    onClick={() => { setPlan((p) => p && { ...p, sim: newSim(amt as number) }); setShowSimStart(false); setSimPlaying(true); }}
+                    onClick={() => {
+                      if (simAuto) autoTown(false);
+                      setPlan((p) => p && { ...p, sim: newSim(amt as number) });
+                      setShowSimStart(false);
+                      setTimeout(() => setSimPlaying(true), simAuto ? 2800 : 0);
+                    }}
                     className="rounded-xl bg-white/10 px-3 py-2.5 text-left hover:bg-emerald-500/30">
                     <div className="text-sm font-semibold">{money(amt as number)}</div>
                     <div className="text-[11px] text-white/55">{label}</div>

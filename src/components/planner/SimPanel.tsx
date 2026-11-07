@@ -27,9 +27,9 @@ function Spark({ values, color, label, format }: { values: number[]; color: stri
   );
 }
 
-export default function SimPanel({ sim, capacity, playing, setPlaying, speed, setSpeed, onLoan, onEnd }: {
+export default function SimPanel({ sim, capacity, playing, setPlaying, speed, setSpeed, onLoan, onEnd, onAutoTown }: {
   sim: SimState; capacity: number; playing: boolean; setPlaying: (v: boolean) => void; speed: number; setSpeed: (v: number) => void;
-  onLoan: () => void; onEnd: () => void;
+  onLoan: () => void; onEnd: () => void; onAutoTown: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [celebrate, setCelebrate] = useState<string | null>(null);
@@ -77,6 +77,7 @@ export default function SimPanel({ sim, capacity, playing, setPlaying, speed, se
             <Landmark size={14} /><CountUp value={sim.funds} format={money} duration={0.5} />
           </div>
           <div className="flex-1" />
+          <button onClick={onAutoTown} title="Build a brand-new random town with everything it needs and restart the simulation" className="rounded-lg bg-white/10 px-2 py-1 text-[11px] font-semibold hover:bg-white/20">🎲 Auto town</button>
           <button onClick={onLoan} title={`Borrow ${money(LOAN_SIZE)} over 20 years at 6%`} className="rounded-lg bg-white/10 px-2 py-1 text-[11px] font-semibold hover:bg-white/20">+ Loan</button>
           <button onClick={() => setOpen((o) => !o)} className="rounded-lg p-1 hover:bg-white/10" title="Details">
             <motion.span animate={{ rotate: open ? 180 : 0 }} className="block"><ChevronDown size={16} /></motion.span>

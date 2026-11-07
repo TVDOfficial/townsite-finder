@@ -14,7 +14,7 @@ import { CATALOG_BY_TYPE, ROADS, type Category, type ItemType, type RoadType } f
 import { blockLayout, toLocal, toWorld, type Frame, type LotFill } from "./layout";
 import FirstPerson from "./FirstPerson";
 import { GRID, ribbon, smoothPath, type Boundary, type Junction, type JunctionType, type Placed, type Road } from "./geometry";
-import BoundaryMesh from "./Boundary";
+import BoundaryMesh, { type BoundaryHandle } from "./Boundary";
 import Junctions from "./Junctions";
 import Life from "./Life";
 import StreetSigns from "./StreetSigns";
@@ -66,7 +66,7 @@ export interface SceneProps {
   boundary: Boundary | null;
   editBoundary: boolean;
   boundaryDragging: boolean;
-  onBoundaryDragStart: (kind: number | "move", x: number, z: number) => void;
+  onBoundaryDragStart: (kind: BoundaryHandle, x: number, z: number) => void;
   onBoundaryDrag: (x: number, z: number) => void;
   onCapture: (fn: () => string) => void;
   lots: [number, number][][];

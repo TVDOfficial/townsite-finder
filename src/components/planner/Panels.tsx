@@ -8,6 +8,7 @@ import type { Meter, Resource } from "./capacity";
 import { CATALOG_BY_TYPE, JUNCTIONS, ROADS, type CatalogItem, type Payer, type RoadType } from "./catalog";
 import type { Junction, JunctionType, Placed, Road } from "./geometry";
 import type { TownMeta } from "./storage";
+import { SIZES, type SizeKey } from "@/lib/analysis";
 
 export type Period = "year" | "month";
 export const per = (n: number, p: Period) => (p === "year" ? n : n / 12);
@@ -101,8 +102,9 @@ function Section({ title, right, children, open: defaultOpen = true }: { title: 
   );
 }
 
-export function BudgetPanel({ totals, meters, period, setPeriod, goalPeople, goalLabel }: {
+export function BudgetPanel({ totals, meters, period, setPeriod, goalPeople, goalLabel, sizeKey, onSize }: {
   totals: Totals; meters: Meter[]; period: Period; setPeriod: (p: Period) => void; goalPeople: number; goalLabel: string;
+  sizeKey: SizeKey; onSize: (s: SizeKey) => void;
 }) {
   const unit = period === "year" ? "/yr" : "/mo";
   const councilNet = totals.rates - totals.byPayer.council;
@@ -138,6 +140,14 @@ export function BudgetPanel({ totals, meters, period, setPeriod, goalPeople, goa
           <motion.div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300" initial={{ width: 0 }} animate={{ width: `${Math.min(100, (totals.people / goalPeople) * 100)}%` }} transition={{ type: "spring", stiffness: 80, damping: 16 }} />
         </div>
         <div className="mt-1 text-[11px] text-white/50">Goal: {goalLabel}</div>
+        <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg bg-white/5 p-0.5 text-[11px] font-semibold">
+          {(Object.values(SIZES)).map((s) => (
+            <button key={s.key} onClick={() => onSize(s.key)} className="relative z-10 rounded-md px-1 py-1" title={`${s.label}: ${s.peopleRange}`}>
+              {sizeKey === s.key && <motion.span layoutId="town-size" className="absolute inset-0 -z-10 rounded-md bg-emerald-500/40" />}
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <Section title="Services & utilities" right={<span className={`text-xs ${short ? "text-red-300" : "text-emerald-300"}`}>{short ? `${short} short` : "all good"}</span>}>

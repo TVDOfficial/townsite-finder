@@ -111,7 +111,7 @@ export function blockLayout(f: Frame, u0: number, v0: number, u1: number, v1: nu
 }
 
 // ---------- Whole starter town ----------
-const BW = 120, BD = 84; // block size (m)
+const BW0 = 120, BD0 = 84; // default block size (m)
 
 const PLAN: Record<SizeKey, { houses: number; townhouses: number; apartments: number; street: RoadType; note?: string }> = {
   eco: { houses: 50, townhouses: 0, apartments: 0, street: "gravel" },
@@ -125,9 +125,26 @@ const CENTRE: Record<SizeKey, ItemType[]> = {
   large: ["townhall", "supermarket", "supermarket", "shop", "shop", "shop", "cafe", "cafe", "bakery", "pub", "pub", "hospital", "clinic", "police", "fire", "park", "park", "playground", "childcare", "childcare", "church", "pool", "skatepark", "motel"],
 };
 
-export function townLayout(t: TerrainData, b: Boundary | null | undefined, size: SizeKey, existing: Placed[]): Layout {
-  const f = frameOf(b);
-  const plan = PLAN[size];
+/**
+ * Lay out a starter town. Pass `random` (a 0..1 generator) for a different town every time:
+ * block sizes, street direction, housing mix, town-centre order and which side industry goes all vary.
+ */
+export function townLayout(t: TerrainData, b: Boundary | null | undefined, size: SizeKey, existing: Placed[], random?: () => number): Layout {
+  const rnd = random ?? (() => 0.5);
+  const jitter = (base: number, spread: number) => (random ? base * (1 - spread + rnd() * spread * 2) : base);
+  const base = frameOf(b);
+  const f: Frame = random
+    ? {
+        cx: base.cx + (rnd() - 0.5) * 0.12 * (b?.w ?? 1000),
+        cz: base.cz + (rnd() - 0.5) * 0.12 * (b?.d ?? 1000),
+        rot: base.rot + (rnd() < 0.5 ? Math.PI / 2 : 0) + (rnd() - 0.5) * 0.5,
+      }
+    : base;
+  const BW = Math.round(jitter(BW0, 0.15)), BD = Math.round(jitter(BD0, 0.12));
+  const S: 1 | -1 = random && rnd() < 0.5 ? -1 : 1; // which side industry and utilities go
+  const p0 = PLAN[size];
+  const plan = { ...p0, houses: Math.round(jitter(p0.houses, 0.2)), townhouses: Math.round(jitter(p0.townhouses, 0.35)), apartments: Math.round(jitter(p0.apartments, 0.35)) };
+  const centreList = random ? [...CENTRE[size]].sort(() => rnd() - 0.5) : CENTRE[size];
   const items: PlannedItem[] = [];
   const lots: P[][] = [];
   let skipped = 0;
@@ -141,7 +158,7 @@ export function townLayout(t: TerrainData, b: Boundary | null | undefined, size:
   // How many blocks of each kind
   const perBlock = { houses: 10, townhouses: 6, apartments: 6 };
   const need = {
-    centre: Math.ceil(CENTRE[size].length / 6),
+    centre: Math.ceil(centreList.length / 6),
     school: size === "eco" ? 0 : 1,
     apartments: Math.ceil(plan.apartments / perBlock.apartments),
     townhouses: Math.ceil(plan.townhouses / perBlock.townhouses),
@@ -172,7 +189,7 @@ export function townLayout(t: TerrainData, b: Boundary | null | undefined, size:
 
   let bi = 0;
   // Town centre: civic buildings packed along the street fronts of the central blocks.
-  const centreQueue = [...CENTRE[size]];
+  const centreQueue = [...centreList];
   for (let k = 0; k < need.centre && bi < blocks.length; k++, bi++) {
     const blk = blocks[bi];
     const [mt, mb, ml, mr] = marginFor(blk);
@@ -201,7 +218,7 @@ export function townLayout(t: TerrainData, b: Boundary | null | undefined, size:
   const fillBlocks = (count: number, fill: LotFill) => {
     for (let k = 0; k < count && bi < blocks.length; k++, bi++) {
       const blk = blocks[bi];
-      const r = fillBlock(f, blk.u0, blk.v0, blk.u1, blk.v1, fill, marginFor(blk));
+      const r = fillBlock(f, blk.u0, blk.v0, blk.u1, blk.v1, fill === "houses" && random && rnd() < 0.2 ? "mixed" : fill, marginFor(blk));
       lots.push(...r.lots);
       r.items.forEach(tryAdd);
     }
@@ -226,31 +243,32 @@ export function townLayout(t: TerrainData, b: Boundary | null | undefined, size:
     skipped++;
     return false;
   };
-  const west = { u: -uSpan - 30, v: -vSpan };
-  const east = { u: uSpan + 30, v: -vSpan };
-  if (size !== "eco") place("oval", -1, west);
-  if (size === "large") place("highschool", -1, west);
+  const west = { u: -S * (uSpan + 30), v: -vSpan };
+  const east = { u: S * (uSpan + 30), v: -vSpan };
+  const W = (-S) as 1 | -1;
+  if (size !== "eco") place("oval", W, west);
+  if (size === "large") place("highschool", W, west);
   for (const type of (size === "eco" ? ["workshop"] : size === "small" ? ["warehouse", "workshop", "workshop", "hardware", "servo"] : ["warehouse", "warehouse", "workshop", "workshop", "hardware", "servo", "servo", "silos"]) as ItemType[])
-    place(type, 1, east);
+    place(type, S, east);
 
   // Utilities: keep adding until supply meets demand.
   const asPlaced = () => [...existing, ...items.map((i, k) => ({ id: -k - 1, ...i, base: 0, minH: 0, earthM3: 0 }))] as Placed[];
   const meter = (key: string) => computeMeters(asPlaced()).find((m) => m.key === key)!;
-  const utilities = { u: uSpan + 200, v: -vSpan };
+  const utilities = { u: S * (uSpan + 200), v: -vSpan };
   const addUntil = (key: string, type: ItemType, max = 12) => {
     for (let i = 0; i < max; i++) {
       const m = meter(key);
       if (m.supply >= m.demand) return;
-      if (!place(type, 1, utilities)) return;
+      if (!place(type, S, utilities)) return;
     }
   };
   // Jobs first (they also use power and water), then size the utilities for everything.
-  if (size !== "eco") place("agedcare", -1, west);
+  if (size !== "eco") place("agedcare", W, west);
   addUntil("jobs", size === "eco" ? "workshop" : "warehouse", size === "eco" ? 3 : 20);
-  if (size === "eco") addUntil("water", "windmill", 20); else { addUntil("water", "watertreat"); place("watertower", 1, utilities); }
+  if (size === "eco") addUntil("water", "windmill", 20); else { addUntil("water", "watertreat"); place("watertower", S, utilities); }
   addUntil("sewage", "sewage");
   addUntil("power", "solar");
-  place("battery", 1, utilities);
+  place("battery", S, utilities);
   addUntil("comms", "telecom");
   addUntil("health", "clinic");
   addUntil("safety", "police");
@@ -259,7 +277,7 @@ export function townLayout(t: TerrainData, b: Boundary | null | undefined, size:
   if (size !== "eco") addUntil("secondary", "highschool", 2);
   addUntil("power", "solar"); // services added above also use power
   // A road out to the utilities and industry.
-  roads.push({ type: plan.street, pts: [toWorld(f, uSpan, 0), toWorld(f, uSpan + 330, 0)] });
+  roads.push({ type: plan.street, pts: [toWorld(f, S * uSpan, 0), toWorld(f, S * (uSpan + 330), 0)] });
 
   const people = items.reduce((s, i) => s + (CATALOG_BY_TYPE[i.type].people ?? 0), 0);
   return { roads, items, lots, people, skipped, note: plan.note };
