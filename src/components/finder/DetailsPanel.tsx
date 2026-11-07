@@ -44,8 +44,11 @@ export default function DetailsPanel({ details: d, nearby, nearbyLoading, sizeKe
   const [copied, setCopied] = useState(false);
 
   const title = d.places[0] ? `${km(d.places[0].km)} from ${d.places[0].name}` : "Remote outback";
-  const earthUrl = `https://earth.google.com/web/@${d.lat},${d.lng},${d.terrain?.elevation ?? 200}a,2500d,35y,0h,60t,0r`;
-  const mapsUrl = `https://www.google.com/maps/@?api=1&map_action=map&center=${d.lat},${d.lng}&zoom=14&basemap=satellite`;
+  // Both open with a pin on the spot: Earth via a coordinate search (adds a placemark),
+  // Maps via a coordinate "place" URL in satellite view.
+  const ll = `${d.lat.toFixed(5)},${d.lng.toFixed(5)}`;
+  const earthUrl = `https://earth.google.com/web/search/${ll}/@${ll},${d.terrain?.elevation ?? 200}a,2500d,35y,0h,60t,0r`;
+  const mapsUrl = `https://www.google.com/maps/place/${ll}/@${ll},2500m/data=!3m1!1e3`;
   const planUrl = `/plan?lat=${d.lat}&lng=${d.lng}&size=${sizeKey}`;
 
   const share = async () => {
