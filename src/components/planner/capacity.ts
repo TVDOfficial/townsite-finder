@@ -45,7 +45,11 @@ export interface Meter {
 
 const PER_PERSON = { power: 0.25, water: 0.3, sewage: 0.25 };
 
-export function computeMeters(placed: Placed[]): Meter[] {
+/**
+ * Supply vs demand. `residents` overrides the number of people (the simulation uses the current
+ * population instead of full housing capacity); `mod` lets events change supply/demand.
+ */
+export function computeMeters(placed: Placed[], residents?: number, mod?: { waterSupply?: number; powerDemand?: number }): Meter[] {
   let people = 0, jobs = 0;
   const demand: Record<Resource, number> = { power: 0, water: 0, sewage: 0, primary: 0, secondary: 0, health: 0, safety: 0, food: 0, comms: 0, jobs: 0 };
   const supply: Record<Resource, number> = { ...demand };
@@ -65,9 +69,12 @@ export function computeMeters(placed: Placed[]): Meter[] {
     const s = SUPPLY[p.type];
     if (s) for (const [k, v] of Object.entries(s)) supply[k as Resource] += v!;
   }
+  if (residents != null) people = residents;
   demand.power += people * PER_PERSON.power;
   demand.water += people * PER_PERSON.water;
   demand.sewage += people * PER_PERSON.sewage;
+  if (mod?.waterSupply != null) supply.water *= mod.waterSupply;
+  if (mod?.powerDemand != null) demand.power *= mod.powerDemand;
   demand.primary = people * 0.09; // ~9% of people are primary-school age
   demand.secondary = people * 0.08;
   demand.health = demand.safety = demand.food = demand.comms = people;

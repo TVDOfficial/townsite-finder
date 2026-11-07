@@ -24,3 +24,6 @@ export function LogoMark({ size = 32, className = "" }: { size?: number; classNa
 
 export const PORTFOLIO_URL = "https://mathewpittard.vercel.app";
 export const REPO_URL = "https://github.com/TVDOfficial/townsite-finder";
+
+/** e.g. "v1.0.0 · fd8da7d" */
+export const VERSION_LABEL = `v${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"} · ${process.env.NEXT_PUBLIC_COMMIT ?? "dev"}`;

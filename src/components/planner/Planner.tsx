@@ -4,13 +4,13 @@
 /* eslint-disable @next/next/no-location-assign-relative-destination -- opening a town elsewhere needs a full reload */
 
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, Check, FileText, Footprints, Grid3x3, Spline, Minus, Moon, Pause, Play, Plane, Route as RouteIcon, Save, Sparkles, Sun, Undo2, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, FileText, TrendingUp, Footprints, Grid3x3, Spline, Minus, Moon, Pause, Play, Plane, Route as RouteIcon, Save, Sparkles, Sun, Undo2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { estimatePrice, estimateTenure, SIZES, type SizeKey } from "@/lib/analysis";
 import type { NearbyDetails, SpotDetails } from "@/lib/types";
 import { money } from "../ui";
-import { LogoMark, PORTFOLIO_URL, REPO_URL } from "../Logo";
+import { LogoMark, PORTFOLIO_URL, REPO_URL, VERSION_LABEL } from "../Logo";
 import { computeMeters, itemCapacity } from "./capacity";
 import {
   CATALOG, CATALOG_BY_TYPE, CATEGORIES, EARTHWORKS_PER_M3, JUNCTIONS, RATES_PER_DWELLING, ROADS, streetName, townName,
@@ -22,6 +22,8 @@ import {
   type Boundary, type JunctionType, type Placed, type Road,
 } from "./geometry";
 import Report from "./Report";
+import SimPanel from "./SimPanel";
+import { capacityOf, newSim, step, takeLoan, type LogEntry } from "./sim";
 import { blockLayout, fits, frameOf, toLocal, townLayout, type Layout, type LotFill } from "./layout";
 import { BudgetPanel, ItemCard, JunctionCard, PaletteCard, RoadCard, TownsMenu, type Period, type Totals } from "./Panels";
 import Scene, { type Tool } from "./Scene";
@@ -53,6 +55,10 @@ export default function Planner() {
   const [showStarter, setShowStarter] = useState(false);
   const [starterReplace, setStarterReplace] = useState(true);
   const [building, setBuilding] = useState(false);
+  const [simPlaying, setSimPlaying] = useState(false);
+  const [simSpeed, setSimSpeed] = useState(3);
+  const [showSimStart, setShowSimStart] = useState(false);
+  const simNews = useRef<LogEntry[]>([]);
   const [period, setPeriod] = useState<Period>("year");
   const [hoverInfo, setHoverInfo] = useState<{ ok: boolean; reason?: string } | null>(null);
   const [walk, setWalk] = useState({ flying: false, speed: 0, alt: 0, locked: false });
@@ -176,6 +182,43 @@ export default function Planner() {
     if (last) { setPlan((p) => (p ? { ...p, ...last } : p)); setSel(null); }
   }, []);
 
+  // ---------- Simulation ----------
+  const sim = plan?.sim;
+  /** During a simulation, council-built things come out of the town's budget. */
+  const canAfford = (cost: number, what: string) => {
+    if (!sim || cost <= 0) return true;
+    if (sim.funds >= cost) return true;
+    flash(`Not enough council funds for ${what} (${money(cost)}). Take a loan or wait for rates to come in.`);
+    return false;
+  };
+  const spend = (cost: number, what: string) => {
+    if (!sim || cost <= 0) return;
+    setPlan((p) => p?.sim ? { ...p, sim: { ...p.sim, funds: p.sim.funds - cost, log: [...p.sim.log, { t: p.sim.t, text: `Built ${what} for ${money(cost)}.`, tone: "info" as const }].slice(-60) } } : p);
+  };
+
+  // Ticks: one month per (1 / speed) seconds.
+  const simCtx = useRef({ placed: [] as Placed[], councilUpkeep: 0, hotDays: 10, rainMm: 400 });
+  useEffect(() => {
+    if (!simPlaying || !sim) return;
+    const id = setInterval(() => {
+      setPlan((p) => {
+        if (!p?.sim) return p;
+        const { state, news } = step(p.sim, simCtx.current);
+        simNews.current.push(...news);
+        return { ...p, sim: state };
+      });
+    }, 1000 / simSpeed);
+    return () => clearInterval(id);
+  }, [simPlaying, simSpeed, sim ? "on" : "off"]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Show the latest headline as a toast.
+  useEffect(() => {
+    if (!simNews.current.length) return;
+    const important = simNews.current.filter((n) => n.tone !== "info" || /Year \d+ done|paid off/.test(n.text));
+    simNews.current = [];
+    const last = important.at(-1);
+    if (last) flash(last.text, last.tone === "bad" ? "bad" : "good");
+  }, [sim?.t]);
+
   // ---------- Rules ----------
   const boundary = plan?.boundary;
   const validateAt = useCallback((type: ItemType, x: number, z: number, r: number, ignore?: number) => {
@@ -252,21 +295,28 @@ export default function Planner() {
       return;
     }
     const type = tool.type;
+    const c = CATALOG_BY_TYPE[type];
+    const cost = c.payer === "council" ? c.cost + sw.earthM3 * EARTHWORKS_PER_M3 : 0;
+    if (!canAfford(cost, c.name.toLowerCase())) return;
     commit((p) => ({ ...p, nextId: takeId(p) + 1, placed: [...p.placed, { id: takeId(p), type, x, z, rot, base: sw.base, minH: sw.minH, earthM3: sw.earthM3 }] }));
+    spend(cost, `a ${c.name.toLowerCase()}`);
   };
 
   const onRoadPoint = (x: number, z: number) => setDraftRoad((d) => [...d, [x, z]]);
-  const finishRoad = useCallback(() => {
+  const finishRoad = () => {
     if (draftRoad.length >= 2 && tool?.kind === "road") {
       const type = tool.type;
       const pts = curvy ? smoothPath(draftRoad) : draftRoad;
+      const cost = terrain ? roadStats(terrain, { id: 0, type, name: "", pts }).cost : 0;
+      if (!canAfford(cost, "this road")) { setDraftRoad([]); return; }
+      spend(cost, `${(roadStats(terrain!, { id: 0, type, name: "", pts }).len / 1000).toFixed(2)} km of ${ROADS[type].name.toLowerCase()}`);
       commit((p) => {
         const road: Road = { id: takeId(p), type, name: streetName(type, p.roads.map((r) => r.name)), pts };
         return { ...p, nextId: takeId(p) + 1, roads: addRoadToNetwork(p.roads, road) };
       });
     }
     setDraftRoad([]);
-  }, [draftRoad, tool, commit, curvy]);
+  };
 
   const removeItem = useCallback((id: number) => { commit((p) => ({ ...p, placed: p.placed.filter((x) => x.id !== id) })); setSel(null); }, [commit]);
   const removeRoad = useCallback((id: number) => { commit((p) => ({ ...p, roads: p.roads.filter((x) => x.id !== id) })); setSel(null); }, [commit]);
@@ -292,9 +342,12 @@ export default function Planner() {
     setSel(null);
   }, [placed]);
 
-  const setJunction = useCallback((key: string, t: JunctionType) => {
+  const setJunction = (key: string, t: JunctionType) => {
+    const cost = JUNCTION_COST[t];
+    if (!canAfford(cost, "this junction")) return;
     commit((p) => ({ ...p, junctionTypes: { ...p.junctionTypes, [key]: t } }));
-  }, [commit]);
+    spend(cost, t === "roundabout" ? "a roundabout" : t === "lights" ? "traffic lights" : t === "stop" ? "stop signs" : t === "giveway" ? "give-way signs" : "a junction");
+  };
 
   const onJunctionClick = (key: string) => {
     const j = junctions.find((x) => x.key === key);
@@ -333,6 +386,7 @@ export default function Planner() {
         else setRot((r) => r + (e.shiftKey ? -1 : 1) * (grid ? Math.PI / 2 : Math.PI / 12));
       }
       if (k === "g") setGrid((g) => !g);
+      if (e.key === " " && sim) { e.preventDefault(); setSimPlaying((v) => !v); }
       if (k === "c" && tool?.kind === "road") setCurvy((c) => !c);
       if (k === "m" && sel?.kind === "item") startMove(sel.id);
       if (e.key === "Escape") { if (draftRoad.length) setDraftRoad([]); else if (blockStart) setBlockStart(null); else if (tool) setTool(null); else setSel(null); }
@@ -394,6 +448,9 @@ export default function Planner() {
   }, [placed, roadInfo, junctions, junctionTypes]);
 
   const meters = useMemo(() => computeMeters(placed), [placed]);
+  useEffect(() => {
+    simCtx.current = { placed, councilUpkeep: totals.byPayer.council, hotDays: site?.climate?.hotDaysPerYear ?? 10, rainMm: site?.climate?.annualRainMm ?? 400 };
+  }, [placed, totals, site]);
   const landPrice = useMemo(() => {
     if (!site || !plan) return null;
     const p = estimatePrice(site, estimateTenure(site, nearby), SIZES[plan.size]);
@@ -516,7 +573,7 @@ export default function Planner() {
           junctions={junctions} junctionTypes={resolvedTypes} selectedJunction={sel?.kind === "junction" ? sel.key : null} onJunctionClick={onJunctionClick}
           grid={grid} snapItemPos={snapItemPos} snapRoadPos={snapRoadPos}
           selectedRoadId={sel?.kind === "road" ? sel.id : null} onRoadClick={(id) => setSel({ kind: "road", id })}
-          alive={alive} people={totals.people} curvy={curvy}
+          alive={alive || simPlaying} people={sim ? Math.round(sim.pop) : totals.people} curvy={curvy}
           boundary={plan.boundary ?? null} editBoundary={editBoundary} boundaryDragging={!!boundaryDrag}
           onBoundaryDragStart={(kind, x, z) => setBoundaryDrag({ kind, ox: x - (plan.boundary?.cx ?? 0), oz: z - (plan.boundary?.cz ?? 0) })}
           onBoundaryDrag={onBoundaryDrag} onCapture={onCapture}
@@ -576,6 +633,7 @@ export default function Planner() {
               title="Simulate people and traffic" className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold shadow-lg ${alive ? "bg-amber-500 shadow-amber-900/40" : "glass"}`}>
               {alive ? <><Pause size={15} /> Pause</> : <><Play size={15} /> Alive</>}
             </motion.button>
+            <TopToggle on={!!sim} onClick={() => { if (sim) setSimPlaying((v) => !v); else setShowSimStart(true); }} title="Simulate the town growing over time"><TrendingUp size={14} /> {sim ? (simPlaying ? "Pause" : "Play") : "Simulate"}</TopToggle>
             <TopToggle on={false} onClick={() => { setSel(null); setTool(null); setTimeout(() => setReport(capture.current?.() ?? null), 60); }} title="Generate a printable town plan report"><FileText size={14} /> Report</TopToggle>
             <TopToggle on={showTowns} onClick={openTowns} title="Save, load, export, share"><Save size={14} /> Towns</TopToggle>
             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => { setTool(null); setWalkPaused(true); setMode("walk"); }}
@@ -662,7 +720,8 @@ export default function Planner() {
               Left-drag pan · right-drag rotate · scroll zoom · click things to select · <b className="text-white/80">G</b> grid · <b className="text-white/80">Ctrl+Z</b> undo
               <div className="mt-1.5 flex gap-2 text-white/45">
                 <span>By <a href={PORTFOLIO_URL} target="_blank" rel="noreferrer" className="text-white/75 hover:text-emerald-300">Mathew Pittard</a></span>·
-                <a href={REPO_URL} target="_blank" rel="noreferrer" className="hover:text-emerald-300">GitHub</a>
+                <a href={REPO_URL} target="_blank" rel="noreferrer" className="hover:text-emerald-300">GitHub</a>·
+                <span className="font-mono">{VERSION_LABEL}</span>
               </div>
             </div>
           </motion.aside>
@@ -743,13 +802,53 @@ export default function Planner() {
           <AnimatePresence>
             {toast && (
               <motion.div initial={{ opacity: 0, y: -10, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0 }}
-                className={`absolute left-1/2 top-20 z-40 -translate-x-1/2 rounded-full px-4 py-2 text-sm font-medium shadow-lg ${toast.tone === "bad" ? "bg-red-500/90" : "bg-emerald-600/90"}`}>
+                className={`absolute left-1/2 z-40 max-w-[36rem] -translate-x-1/2 rounded-2xl px-4 py-2 text-center text-sm font-medium shadow-lg ${sim ? "top-36" : "top-20"} ${toast.tone === "bad" ? "bg-red-500/90" : "bg-emerald-600/90"}`}>
                 {toast.msg}
               </motion.div>
             )}
           </AnimatePresence>
         </>
       )}
+
+      <AnimatePresence>
+        {sim && terrain && mode === "build" && (
+          <SimPanel
+            sim={sim} capacity={capacityOf(placed)} playing={simPlaying} setPlaying={setSimPlaying} speed={simSpeed} setSpeed={setSimSpeed}
+            onLoan={() => setPlan((p) => (p?.sim ? { ...p, sim: takeLoan(p.sim) } : p))}
+            onEnd={() => { if (confirm("End the simulation? Your town stays, but the simulated years, money and badges are cleared.")) { setSimPlaying(false); setPlan((p) => p && { ...p, sim: undefined }); } }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSimStart && plan && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowSimStart(false)}>
+            <motion.div initial={{ scale: 0.92, y: 14 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="glass w-[27rem] rounded-2xl p-5">
+              <div className="text-3xl">📈</div>
+              <div className="mt-1 text-lg font-semibold">Simulate your town</div>
+              <ul className="mt-2 space-y-1 text-sm text-white/70">
+                <li>• Months tick by. People move in when there are homes and the town is a nice place to live.</li>
+                <li>• Happiness comes from water, power, sewage, schools, health, jobs and amenities like parks and pubs.</li>
+                <li>• The council collects rates and grants and pays for roads, parks and council services.</li>
+                <li>• While it runs, new council buildings and roads cost money. Private and state buildings are paid for by others.</li>
+                <li>• Expect droughts, bushfires, heatwaves, booms and grants. Earn badges for challenges.</li>
+              </ul>
+              <div className="mt-3 text-xs font-semibold uppercase tracking-wider text-white/50">Starting council budget</div>
+              <div className="mt-1.5 grid grid-cols-3 gap-2">
+                {[[10_000_000, "Tight"], [25_000_000, "Normal"], [60_000_000, "Generous"]].map(([amt, label]) => (
+                  <motion.button key={label} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
+                    onClick={() => { setPlan((p) => p && { ...p, sim: newSim(amt as number) }); setShowSimStart(false); setSimPlaying(true); }}
+                    className="rounded-xl bg-white/10 px-3 py-2.5 text-left hover:bg-emerald-500/30">
+                    <div className="text-sm font-semibold">{money(amt as number)}</div>
+                    <div className="text-[11px] text-white/55">{label}</div>
+                  </motion.button>
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-white/45">Tip: lay out a starter town first. Press Space to pause. Everything is saved with your town.</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showStarter && plan && (

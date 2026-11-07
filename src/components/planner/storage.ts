@@ -2,6 +2,7 @@
 import type { SizeKey } from "@/lib/analysis";
 import { streetName, townName } from "./catalog";
 import type { Boundary, JunctionType, Placed, Road } from "./geometry";
+import type { SimState } from "./sim";
 
 export interface PlanData {
   v: 2;
@@ -17,6 +18,7 @@ export interface PlanData {
   savedAt: number;
   boundary?: Boundary;
   lots?: [number, number][][];
+  sim?: SimState;
 }
 
 export interface TownMeta {

@@ -25,6 +25,8 @@ Created by [Mathew Pittard](https://mathewpittard.vercel.app).
   - Capacity meters for power, water, sewage, school places, healthcare, police and fire, groceries, internet and jobs.
   - A budget panel with build cost, running cost per year or month, who pays, and council rates income.
   - **Alive** mode: cars drive the roads (on the left) and people walk between homes, shops and parks.
+  - **Layout tab**: *Lay out a starter town* builds streets, lots, a town centre, schools, industry and enough utilities in one click. *Block of lots* subdivides any block you drag out, with a building facing the street on each lot.
+  - **Simulate**: press play and watch the town grow month by month. People move in when there are homes and good services, the council collects rates and grants and pays upkeep, events like droughts, bushfires and mining booms hit, and challenges earn badges. Council buildings and roads cost money while it runs; take a loan if you need to.
   - **Report**: a printable town plan report (Print / Save as PDF) with a 3D snapshot, site assessment, site plan, schedules, services, budget and approvals pathway.
   - **Saving**: towns autosave in your browser. *Towns* lists them and lets you export or import a file, or copy a share link.
 - **Walk and fly**: *Walk*, then WASD to move, F to fly, Shift for super speed.

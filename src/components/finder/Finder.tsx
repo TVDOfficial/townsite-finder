@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { Dices, Layers3, RotateCcw, Radar, Sparkles, Trophy } from "lucide-react";
-import { LogoMark, PORTFOLIO_URL, REPO_URL } from "../Logo";
+import { LogoMark, PORTFOLIO_URL, REPO_URL, VERSION_LABEL } from "../Logo";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SIZES, type SizeKey } from "@/lib/analysis";
@@ -341,6 +341,8 @@ export default function Finder() {
           <a href={PORTFOLIO_URL} target="_blank" rel="noreferrer" className="hover:text-accent hover:underline">Portfolio</a>
           <span aria-hidden>·</span>
           <a href={REPO_URL} target="_blank" rel="noreferrer" className="hover:text-accent hover:underline">GitHub</a>
+          <span aria-hidden>·</span>
+          <a href={`${REPO_URL}/commits/main`} target="_blank" rel="noreferrer" className="font-mono text-[11px] hover:text-accent" title="Version and build">{VERSION_LABEL}</a>
         </footer>
       </aside>
 
