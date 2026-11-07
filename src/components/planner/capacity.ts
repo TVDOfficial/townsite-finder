@@ -71,7 +71,9 @@ export function computeMeters(placed: Placed[]): Meter[] {
   demand.primary = people * 0.09; // ~9% of people are primary-school age
   demand.secondary = people * 0.08;
   demand.health = demand.safety = demand.food = demand.comms = people;
-  demand.jobs = people * 0.5; // about half the people want a job
+  // About half of people work, but in country towns many of them work on surrounding farms and
+  // mines, so roughly a quarter of residents need a job in town itself.
+  demand.jobs = people * 0.25;
   supply.jobs = jobs;
 
   const renewOnly = (has.has("solar") || has.has("wind")) && !has.has("battery") && !has.has("substation");
@@ -87,7 +89,7 @@ export function computeMeters(placed: Placed[]): Meter[] {
     { key: "safety", label: "Police & fire", unit: "people", demand: demand.safety, supply: supply.safety },
     { key: "food", label: "Groceries", unit: "people", demand: demand.food, supply: supply.food },
     { key: "comms", label: "Phone & internet", unit: "people", demand: demand.comms, supply: supply.comms },
-    { key: "jobs", label: "Local jobs", unit: "jobs", demand: demand.jobs, supply: supply.jobs },
+    { key: "jobs", label: "Jobs in town", unit: "jobs", demand: demand.jobs, supply: supply.jobs },
   ];
 }
 

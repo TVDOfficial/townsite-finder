@@ -78,7 +78,7 @@ export default function Report({ plan, totals, meters, roadInfo, junctions, junc
             <Kpi label="Running costs" value={`${money(totals.upkeep)}/yr`} sub={`${money(totals.upkeep / 12)}/month`} />
             <Kpi label="Town area" value={`${Math.round(areaHa).toLocaleString()} ha`} sub={`${(boundary.w / 1000).toFixed(2)} × ${(boundary.d / 1000).toFixed(2)} km`} />
             <Kpi label="Land purchase (est.)" value={analysis?.price.available ? `${money(landLow)}–${money(landHigh)}` : "Not for sale"} />
-            <Kpi label="Roads" value={`${totals.roadKm.toFixed(2)} km`} sub={`${plan.roads.length} streets`} />
+            <Kpi label="Roads" value={`${totals.roadKm.toFixed(2)} km`} sub={`${plan.roads.length} streets${plan.lots?.length ? ` · ${plan.lots.length} lots` : ""}`} />
             <Kpi label="Site difficulty" value={analysis ? `${analysis.diff.total}/100` : "—"} sub={analysis?.diff.label} />
           </div>
           <p className="mt-4 text-sm leading-relaxed text-neutral-700">

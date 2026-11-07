@@ -16,6 +16,7 @@ export interface PlanData {
   nextId: number;
   savedAt: number;
   boundary?: Boundary;
+  lots?: [number, number][][];
 }
 
 export interface TownMeta {

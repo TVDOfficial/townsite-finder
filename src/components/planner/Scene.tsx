@@ -3,13 +3,15 @@
 // three.js objects (camera, scene, lights) are mutable by design in react-three-fiber.
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
-import { Bvh, MapControls, Sky, Stars } from "@react-three/drei";
+import { Bvh, Detailed, Html, MapControls, Sky, Stars } from "@react-three/drei";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { MapControls as MapControlsImpl } from "three-stdlib";
-import { CATALOG_BY_TYPE, ROADS, type ItemType, type RoadType } from "./catalog";
+import { CATALOG_BY_TYPE, ROADS, type Category, type ItemType, type RoadType } from "./catalog";
+import { blockLayout, toLocal, toWorld, type Frame, type LotFill } from "./layout";
 import FirstPerson from "./FirstPerson";
 import { GRID, ribbon, smoothPath, type Boundary, type Junction, type JunctionType, type Placed, type Road } from "./geometry";
 import BoundaryMesh from "./Boundary";
@@ -25,6 +27,7 @@ export type Tool =
   | { kind: "move"; type: ItemType; id: number }
   | { kind: "road"; type: RoadType }
   | { kind: "junction"; type: Exclude<JunctionType, "plain"> }
+  | { kind: "block"; fill: LotFill; streets: boolean }
   | null;
 
 export interface SceneProps {
@@ -66,6 +69,11 @@ export interface SceneProps {
   onBoundaryDragStart: (kind: number | "move", x: number, z: number) => void;
   onBoundaryDrag: (x: number, z: number) => void;
   onCapture: (fn: () => string) => void;
+  lots: [number, number][][];
+  frame: Frame;
+  blockStart: [number, number] | null;
+  onBlockPoint: (x: number, z: number) => void;
+  reveal: { minId: number; cx: number; cz: number } | null;
 }
 
 function sunDir(hour: number) {
@@ -158,13 +166,24 @@ function TerrainMesh({ t, grid, cursor, onPointerMove, onClick, onDoubleClick, o
 }
 
 // ---------- Placed buildings ----------
-const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive, hidden }: { p: Placed; selected: boolean; onSelect: (id: number) => void; interactive: boolean; hidden?: boolean }) {
+// Simple stand-in boxes for buildings far from the camera (keeps big towns smooth).
+const NO_LOD = new Set<ItemType>(["wind", "oval", "solar", "airstrip", "park", "trees", "garden", "carpark", "busstop", "playground", "skatepark", "pool"]);
+const LOD_COLOR: Record<Category, string> = { Housing: "#d9cdb8", Community: "#d6dbe0", Commercial: "#d8c7b0", Industry: "#b9bfc5", Utilities: "#c9d1d3", Transport: "#c4c0b8", Nature: "#6f7f45" };
+const LOD_HEIGHT: Partial<Record<ItemType, number>> = { apartments: 13, townhouses: 8, hospital: 12, highschool: 7, silos: 22, watertower: 26, telecom: 30, warehouse: 9, supermarket: 8 };
+const lodMats = new Map<Category, THREE.MeshStandardMaterial>();
+const lodMat = (c: Category) => {
+  let m = lodMats.get(c);
+  if (!m) { m = new THREE.MeshStandardMaterial({ color: LOD_COLOR[c], roughness: 0.85 }); lodMats.set(c, m); }
+  return m;
+};
+
+const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive, hidden, delay = 0 }: { p: Placed; selected: boolean; onSelect: (id: number) => void; interactive: boolean; hidden?: boolean; delay?: number }) {
   const g = useRef<THREE.Group>(null);
-  const born = useRef(performance.now());
-  const { w, d } = CATALOG_BY_TYPE[p.type];
+  const born = useRef(performance.now() + delay);
+  const { w, d, category } = CATALOG_BY_TYPE[p.type];
   useFrame(() => {
     if (!g.current) return;
-    const t = Math.min(1, (performance.now() - born.current) / 650);
+    const t = Math.max(0, Math.min(1, (performance.now() - born.current) / 650));
     // Elastic drop-in
     const s = t === 1 ? 1 : 1 - Math.pow(2, -10 * t) * Math.cos(t * Math.PI * 4.5);
     g.current.scale.setScalar(Math.max(0.001, s));
@@ -178,7 +197,14 @@ const PlacedItem = memo(function PlacedItem({ p, selected, onSelect, interactive
       onClick={interactive ? (e) => { if (e.delta > 5) return; e.stopPropagation(); onSelect(p.id); } : undefined}
     >
       {plinth > 0.15 && <mesh geometry={boxGeo(w, plinth + 0.3, d)} position={[0, -(plinth + 0.3) / 2, 0]} material={M.concrete} castShadow receiveShadow />}
-      <Model type={p.type} seed={p.id} />
+      {NO_LOD.has(p.type) ? (
+        <Model type={p.type} seed={p.id} />
+      ) : (
+        <Detailed distances={[0, 450]}>
+          <group><Model type={p.type} seed={p.id} /></group>
+          <mesh geometry={boxGeo(w * 0.8, LOD_HEIGHT[p.type] ?? 5, d * 0.75)} position={[0, (LOD_HEIGHT[p.type] ?? 5) / 2, 0]} material={lodMat(category)} />
+        </Detailed>
+      )}
       {selected && (
         <mesh geometry={boxGeo(w + 1.5, 0.4, d + 1.5)} position={[0, 0.2, 0]} material={M.selected} />
       )}
@@ -214,6 +240,48 @@ const RoadMesh = memo(function RoadMesh({ t, road, draft, selected, onClick }: {
     </>
   );
 });
+
+// ---------- Lot boundaries (one merged mesh for all of them) ----------
+let lotMat: THREE.MeshBasicMaterial | null = null;
+const LotLines = memo(function LotLines({ t, lots, ghost }: { t: TerrainData; lots: [number, number][][]; ghost?: boolean }) {
+  const geo = useMemo(() => {
+    if (!lots.length) return null;
+    const parts = lots.map((poly) => ribbon(t, [...poly, poly[0]], ghost ? 0.6 : 0.3, 0, 0.45, 1, true));
+    const merged = mergeGeometries(parts, false);
+    parts.forEach((g) => g.dispose());
+    return merged;
+  }, [t, lots, ghost]);
+  useEffect(() => () => geo?.dispose(), [geo]);
+  lotMat ??= new THREE.MeshBasicMaterial({ color: "#f5f1e6", transparent: true, opacity: 0.6, depthWrite: false });
+  return geo ? <mesh geometry={geo} material={ghost ? mats().ghostOk : lotMat} /> : null;
+});
+
+/** Live preview while dragging out a block of lots. */
+function BlockPreview({ t, frame, a, b, fill, streets }: { t: TerrainData; frame: Frame; a: [number, number]; b: [number, number]; fill: LotFill; streets: boolean }) {
+  const [u0, v0] = toLocal(frame, a[0], a[1]);
+  const [u1, v1] = toLocal(frame, b[0], b[1]);
+  const lay = useMemo(
+    () => blockLayout(frame, Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1), fill, streets ? "sealed" : null),
+    [frame, u0, v0, u1, v1, fill, streets],
+  );
+  const ring = useMemo(() => {
+    const cs = [toWorld(frame, Math.min(u0, u1), Math.min(v0, v1)), toWorld(frame, Math.max(u0, u1), Math.min(v0, v1)), toWorld(frame, Math.max(u0, u1), Math.max(v0, v1)), toWorld(frame, Math.min(u0, u1), Math.max(v0, v1))];
+    return ribbon(t, [...cs, cs[0]], streets ? 8 : 1, 0, 0.5, 1, true);
+  }, [t, frame, u0, v0, u1, v1, streets]);
+  useEffect(() => () => ring.dispose(), [ring]);
+  const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  return (
+    <>
+      <mesh geometry={ring} material={mats().ghostOk} />
+      <LotLines t={t} lots={lay.lots} ghost />
+      <Html position={[mid[0], t.heightAt(mid[0], mid[1]) + 12, mid[1]]} center style={{ pointerEvents: "none" }}>
+        <div style={{ background: "rgba(10,20,15,.85)", color: "white", padding: "4px 10px", borderRadius: 999, font: "600 12px system-ui", whiteSpace: "nowrap" }}>
+          {Math.round(Math.abs(u1 - u0))} × {Math.round(Math.abs(v1 - v0))} m · {lay.lots.length} lots · {lay.people} people
+        </div>
+      </Html>
+    </>
+  );
+}
 
 // ---------- Ghost preview ----------
 function Ghost({ type, x, z, rot, base, ok }: { type: ItemType; x: number; z: number; rot: number; base: number; ok: boolean }) {
@@ -323,8 +391,9 @@ function InteractionLayer(props: SceneProps) {
     if (!raw) return null;
     if (tool?.kind === "item" || tool?.kind === "move") { const [x, z] = snapItemPos(tool.type, raw.x, raw.z); return { x, z }; }
     if (tool?.kind === "road") { const [x, z] = snapRoadPos(raw.x, raw.z); return { x, z }; }
+    if (tool?.kind === "block" && grid) { const g = 5; return { x: Math.round(raw.x / g) * g, z: Math.round(raw.z / g) * g }; }
     return raw;
-  }, [raw, tool, snapItemPos, snapRoadPos]);
+  }, [raw, tool, snapItemPos, snapRoadPos, grid]);
   const placing = tool?.kind === "item" || tool?.kind === "move" ? tool : null;
   const v = placing && hover ? validate(placing.type, hover.x, hover.z, rot) : null;
   useEffect(() => { onHoverInfo(v ? { ok: v.ok, reason: v.reason } : null); }, [v?.ok, v?.reason]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -348,6 +417,7 @@ function InteractionLayer(props: SceneProps) {
           if (mode !== "build" || e.delta > 5) return;
           if (placing && hover) onPlace(hover.x, hover.z);
           else if (tool?.kind === "road" && hover) onRoadPoint(hover.x, hover.z);
+          else if (tool?.kind === "block" && hover) props.onBlockPoint(hover.x, hover.z);
           else onSelect(null);
         }}
         onDoubleClick={() => { if (tool?.kind === "road") onFinishRoad(); }}
@@ -355,6 +425,9 @@ function InteractionLayer(props: SceneProps) {
       />
       {placing && hover && v && mode === "build" && <Ghost type={placing.type} x={hover.x} z={hover.z} rot={rot} base={v.base} ok={v.ok} />}
       {draft && draft.pts.length >= 2 && <RoadMesh t={t} road={draft} draft />}
+      {tool?.kind === "block" && props.blockStart && hover && (
+        <BlockPreview t={t} frame={props.frame} a={props.blockStart} b={[hover.x, hover.z]} fill={tool.fill} streets={tool.streets} />
+      )}
       {tool?.kind === "road" && hover && (
         <mesh position={[hover.x, t.heightAt(hover.x, hover.z) + 1, hover.z]}>
           <sphereGeometry args={[2.5, 16, 16]} />
@@ -376,6 +449,7 @@ function World(props: SceneProps) {
         <RoadMesh key={r.id} t={t} road={r} selected={props.selectedRoadId === r.id} onClick={mode === "build" && !tool ? props.onRoadClick : undefined} />
       ))}
       <StreetSigns t={t} roads={roads} />
+      <LotLines t={t} lots={props.lots} />
       {props.boundary && <BoundaryMesh t={t} b={props.boundary} editing={props.editBoundary && mode === "build"} onDragStart={props.onBoundaryDragStart} />}
       <CaptureBridge onCapture={props.onCapture} />
       {props.alive && <Life t={t} placed={placed} roads={roads} junctionTypes={props.junctionTypes} people={props.people} hour={hour} />}
@@ -385,7 +459,10 @@ function World(props: SceneProps) {
         onClick={mode === "build" && (!tool || tool.kind === "junction") ? props.onJunctionClick : undefined}
       />
       {placed.map((p) => (
-        <PlacedItem key={p.id} p={p} selected={p.id === selectedId} onSelect={onSelect} interactive={mode === "build" && !tool} hidden={tool?.kind === "move" && tool.id === p.id} />
+        <PlacedItem
+          key={p.id} p={p} selected={p.id === selectedId} onSelect={onSelect} interactive={mode === "build" && !tool} hidden={tool?.kind === "move" && tool.id === p.id}
+          delay={props.reveal && p.id >= props.reveal.minId ? Math.min(2600, Math.hypot(p.x - props.reveal.cx, p.z - props.reveal.cz) * 2.2) : 0}
+        />
       ))}
       {mode === "build" ? (
         <BuildCamera focus={focus} enabled={!props.boundaryDragging} />

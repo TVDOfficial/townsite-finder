@@ -22,6 +22,7 @@ import {
   type Boundary, type JunctionType, type Placed, type Road,
 } from "./geometry";
 import Report from "./Report";
+import { blockLayout, fits, frameOf, toLocal, townLayout, type Layout, type LotFill } from "./layout";
 import { BudgetPanel, ItemCard, JunctionCard, PaletteCard, RoadCard, TownsMenu, type Period, type Totals } from "./Panels";
 import Scene, { type Tool } from "./Scene";
 import { deleteTown, exportFile, findTownAt, importFile, listTowns, loadTown, newId, readShareHash, saveTown, shareLink, type PlanData, type TownMeta } from "./storage";
@@ -29,7 +30,7 @@ import { loadTerrain, type TerrainData } from "./terrain";
 
 const LOAD_LINES = ["Downloading elevation data…", "Stitching satellite photos…", "Shaping the hills…", "Pouring the bitumen…"];
 type Selection = { kind: "item"; id: number } | { kind: "road"; id: number } | { kind: "junction"; key: string } | null;
-type Snapshot = { placed: Placed[]; roads: Road[]; junctionTypes: Record<string, JunctionType> };
+type Snapshot = { placed: Placed[]; roads: Road[]; junctionTypes: Record<string, JunctionType>; lots?: [number, number][][] };
 
 export default function Planner() {
   const [plan, setPlan] = useState<PlanData | null>(null);
@@ -45,7 +46,13 @@ export default function Planner() {
   const [grid, setGrid] = useState(false);
   const [alive, setAlive] = useState(false);
   const [mode, setMode] = useState<"build" | "walk">("build");
-  const [tab, setTab] = useState<Category | "Roads">("Housing");
+  const [tab, setTab] = useState<Category | "Roads" | "Layout">("Layout");
+  const [blockStart, setBlockStart] = useState<[number, number] | null>(null);
+  const [blockStreets, setBlockStreets] = useState(true);
+  const [reveal, setReveal] = useState<{ minId: number; cx: number; cz: number } | null>(null);
+  const [showStarter, setShowStarter] = useState(false);
+  const [starterReplace, setStarterReplace] = useState(true);
+  const [building, setBuilding] = useState(false);
   const [period, setPeriod] = useState<Period>("year");
   const [hoverInfo, setHoverInfo] = useState<{ ok: boolean; reason?: string } | null>(null);
   const [walk, setWalk] = useState({ flying: false, speed: 0, alt: 0, locked: false });
@@ -158,7 +165,7 @@ export default function Planner() {
   const commit = useCallback((fn: (p: PlanData) => PlanData) => {
     setPlan((p) => {
       if (!p) return p;
-      history.current = [...history.current.slice(-49), { placed: p.placed, roads: p.roads, junctionTypes: p.junctionTypes }];
+      history.current = [...history.current.slice(-49), { placed: p.placed, roads: p.roads, junctionTypes: p.junctionTypes, lots: p.lots ?? [] }];
       return fn(p);
     });
   }, []);
@@ -328,7 +335,7 @@ export default function Planner() {
       if (k === "g") setGrid((g) => !g);
       if (k === "c" && tool?.kind === "road") setCurvy((c) => !c);
       if (k === "m" && sel?.kind === "item") startMove(sel.id);
-      if (e.key === "Escape") { if (draftRoad.length) setDraftRoad([]); else if (tool) setTool(null); else setSel(null); }
+      if (e.key === "Escape") { if (draftRoad.length) setDraftRoad([]); else if (blockStart) setBlockStart(null); else if (tool) setTool(null); else setSel(null); }
       if (e.key === "Enter") finishRoad();
       if (e.key === "Delete" || e.key === "Backspace") {
         if (sel?.kind === "item") removeItem(sel.id);
@@ -399,6 +406,59 @@ export default function Planner() {
   const goal = plan ? SIZES[plan.size] : SIZES.small;
   const night = hour < 6.3 || hour > 18.3;
 
+  // ---------- Auto layout ----------
+  /** Add a generated layout to the town (roads join the network, buildings that don't fit are skipped). */
+  const applyLayout = (lay: Layout, replace: boolean, centre: [number, number]) => {
+    if (!terrain || !plan) return 0;
+    const p = plan;
+    let nextId = p.nextId;
+    let newRoads = replace ? [] : p.roads;
+    const names = newRoads.map((r) => r.name);
+    for (const r of lay.roads) {
+      const name = r.name && !names.includes(r.name) ? r.name : streetName(r.type, names);
+      names.push(name);
+      newRoads = addRoadToNetwork(newRoads, { id: nextId++, type: r.type, name, pts: r.pts });
+    }
+    const keep = replace ? [] : p.placed;
+    const newPlaced = [...keep];
+    for (const it of lay.items) {
+      if (!fits(terrain, newPlaced, it)) continue;
+      const sw = siteWorks(terrain, it.type, it.x, it.z, it.rot);
+      newPlaced.push({ id: nextId++, type: it.type, x: it.x, z: it.z, rot: it.rot, base: sw.base, minH: sw.minH, earthM3: sw.earthM3 });
+    }
+    const lots = [...(replace ? [] : p.lots ?? []), ...lay.lots];
+    setReveal({ minId: p.nextId, cx: centre[0], cz: centre[1] });
+    commit((cur) => ({ ...cur, nextId, roads: newRoads, placed: newPlaced, junctionTypes: replace ? {} : cur.junctionTypes, lots }));
+    return newPlaced.length - keep.length;
+  };
+
+  const onBlockPoint = (x: number, z: number) => {
+    if (tool?.kind !== "block" || !plan) return;
+    if (!blockStart) { setBlockStart([x, z]); return; }
+    const f = frameOf(plan.boundary);
+    const [u0, v0] = toLocal(f, blockStart[0], blockStart[1]);
+    const [u1, v1] = toLocal(f, x, z);
+    setBlockStart(null);
+    if (Math.abs(u1 - u0) < 40 || Math.abs(v1 - v0) < 40) { flash("Make the block at least 40 m on each side"); return; }
+    const lay = blockLayout(f, Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1), tool.fill, tool.streets ? (plan.size === "eco" ? "gravel" : "sealed") : null);
+    const n = applyLayout(lay, false, [(x + blockStart[0]) / 2, (z + blockStart[1]) / 2]);
+    flash(`${lay.lots.length} lots, ${n} buildings added`, "good");
+  };
+
+  const buildStarterTown = () => {
+    if (!terrain || !plan) return;
+    setBuilding(true);
+    // Let the button show its busy state before the (synchronous) layout runs.
+    setTimeout(() => {
+      const lay = townLayout(terrain, plan.boundary, plan.size, starterReplace ? [] : placed);
+      const n = applyLayout(lay, starterReplace, [plan.boundary?.cx ?? 0, plan.boundary?.cz ?? 0]);
+      setBuilding(false);
+      setShowStarter(false);
+      flash(`Laid out ${n} buildings and ${lay.roads.length} streets for about ${lay.people.toLocaleString()} people${lay.skipped ? ` (skipped ${lay.skipped} spots that were too steep or off the map)` : ""}`, "good");
+      if (lay.note) setTimeout(() => flash(lay.note!, "good"), 4500);
+    }, 60);
+  };
+
   // ---------- Towns ----------
   const openTowns = () => { setTowns(listTowns()); setShowTowns((s) => !s); };
   const openTown = (t: TownMeta) => {
@@ -460,6 +520,7 @@ export default function Planner() {
           boundary={plan.boundary ?? null} editBoundary={editBoundary} boundaryDragging={!!boundaryDrag}
           onBoundaryDragStart={(kind, x, z) => setBoundaryDrag({ kind, ox: x - (plan.boundary?.cx ?? 0), oz: z - (plan.boundary?.cz ?? 0) })}
           onBoundaryDrag={onBoundaryDrag} onCapture={onCapture}
+          lots={plan.lots ?? []} frame={frameOf(plan.boundary)} blockStart={blockStart} onBlockPoint={onBlockPoint} reveal={reveal}
         />
       )}
 
@@ -537,7 +598,7 @@ export default function Planner() {
           <motion.aside initial={{ x: -320, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.8, type: "spring", stiffness: 180, damping: 24 }}
             className="glass absolute bottom-3 left-3 top-20 z-20 flex w-72 flex-col overflow-hidden rounded-2xl">
             <div className="flex flex-wrap gap-1 border-b border-white/10 p-2">
-              {[...CATEGORIES, "Roads" as const].map((c) => (
+              {["Layout" as const, ...CATEGORIES, "Roads" as const].map((c) => (
                 <button key={c} onClick={() => setTab(c)} className="relative rounded-lg px-2 py-1 text-xs font-semibold">
                   {tab === c && <motion.span layoutId="tab" className="absolute inset-0 rounded-lg bg-white/20" transition={{ type: "spring", stiffness: 500, damping: 35 }} />}
                   <span className="relative">{c}</span>
@@ -547,7 +608,34 @@ export default function Planner() {
             <div className="scroll-thin flex-1 overflow-y-auto p-2">
               <AnimatePresence mode="popLayout">
                 <motion.div key={tab} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="grid grid-cols-2 gap-2">
-                  {tab === "Roads" ? (
+                  {tab === "Layout" ? (
+                    <>
+                      <motion.button
+                        onClick={() => { setTool(null); setShowStarter(true); }}
+                        initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3, scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                        className="col-span-2 rounded-xl bg-gradient-to-br from-emerald-500/40 to-sky-500/30 p-3 text-left ring-1 ring-emerald-300/40 hover:from-emerald-500/50"
+                      >
+                        <div className="text-2xl">✨</div>
+                        <div className="mt-1 text-sm font-semibold">Lay out a starter town</div>
+                        <div className="text-[11px] text-white/70">Streets, lots, a town centre, schools and utilities, sized for a {goal.label.toLowerCase()}. Edit it however you like after.</div>
+                      </motion.button>
+                      <div className="col-span-2 mt-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-white/50">Block of lots: drag out a block</div>
+                      {([
+                        ["houses", "🏡", "Houses", "Two rows of 20 m lots, a house on each"],
+                        ["townhouses", "🏘️", "Townhouses", "Rows of townhouses (10 people each)"],
+                        ["apartments", "🏢", "Apartments", "Denser: apartment blocks on each lot"],
+                        ["mixed", "🧩", "Mixed", "Houses on one side, townhouses on the other"],
+                      ] as [LotFill, string, string, string][]).map(([fill, emoji, name, blurb], i) => (
+                        <PaletteCard key={fill} i={i + 1} emoji={emoji} name={name} cost="Click two corners" blurb={blurb}
+                          active={tool?.kind === "block" && tool.fill === fill} onClick={() => { setBlockStart(null); pickTool({ kind: "block", fill, streets: blockStreets }); }} />
+                      ))}
+                      <label className="col-span-2 flex cursor-pointer items-center gap-2 px-1 text-xs text-white/75">
+                        <input type="checkbox" checked={blockStreets} className="accent-emerald-400"
+                          onChange={(e) => { setBlockStreets(e.target.checked); setTool((tl) => (tl?.kind === "block" ? { ...tl, streets: e.target.checked } : tl)); }} />
+                        Add streets around the block
+                      </label>
+                    </>
+                  ) : tab === "Roads" ? (
                     <>
                       {(Object.keys(ROADS) as RoadType[]).map((k, i) => (
                         <PaletteCard key={k} i={i} emoji={ROADS[k].emoji} name={ROADS[k].name} cost={`${money(ROADS[k].perKm)}/km`} blurb={ROADS[k].blurb}
@@ -593,7 +681,7 @@ export default function Planner() {
             )}
             <div className="mt-auto flex gap-2">
               <button onClick={undo} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-medium hover:bg-white/20"><Undo2 size={14} /> Undo</button>
-              <button onClick={() => { if (confirm("Clear everything in this town?")) commit((p) => ({ ...p, placed: [], roads: [], junctionTypes: {} })); }} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-medium hover:bg-red-500/40"><Trash2 size={14} /> Clear</button>
+              <button onClick={() => { if (confirm("Clear everything in this town?")) commit((p) => ({ ...p, placed: [], roads: [], junctionTypes: {}, lots: [] })); }} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-medium hover:bg-red-500/40"><Trash2 size={14} /> Clear</button>
             </div>
           </motion.aside>
 
@@ -635,6 +723,11 @@ export default function Planner() {
                         <span className="text-white/60">Click to add points · double-click, right-click or Enter to finish · snaps to other roads</span>
                         {draftStats && <span className="text-emerald-300">{(draftStats.len / 1000).toFixed(2)} km · {money(draftStats.cost)} · {draftStats.grade.toFixed(1)}% grade</span>}
                       </>
+                    ) : tool.kind === "block" ? (
+                      <>
+                        <span className="font-semibold">🧱 Block of {tool.fill}</span>
+                        <span className="text-white/60">{blockStart ? "Click the opposite corner" : "Click one corner of the block"} · lined up with the town boundary · Esc to cancel</span>
+                      </>
                     ) : (
                       <>
                         <span className="font-semibold">{JUNCTIONS[tool.type].emoji} {JUNCTIONS[tool.type].name}</span>
@@ -657,6 +750,40 @@ export default function Planner() {
           </AnimatePresence>
         </>
       )}
+
+      <AnimatePresence>
+        {showStarter && plan && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => !building && setShowStarter(false)}>
+            <motion.div initial={{ scale: 0.92, y: 14 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="glass w-[26rem] rounded-2xl p-5">
+              <div className="text-3xl">✨</div>
+              <div className="mt-1 text-lg font-semibold">Lay out a starter town</div>
+              <p className="mt-1 text-sm text-white/65">
+                Builds a street grid with a main street, house lots, townhouses and apartments, a town centre, a school,
+                sport, industry and enough water, power and sewage for everyone. It&apos;s lined up with your town boundary.
+              </p>
+              <div className="mt-3 rounded-xl bg-white/5 p-3 text-sm">
+                Size: <b>{goal.label}</b> <span className="text-white/55">({goal.peopleRange})</span>
+                {plan.size === "large" && <div className="mt-1 text-xs text-amber-200">Large towns are laid out as a first stage of about 6,000 people.</div>}
+              </div>
+              {(placed.length > 0 || roads.length > 0) && (
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  {([[true, "Replace everything"], [false, "Add to what's here"]] as const).map(([v, label]) => (
+                    <button key={label} onClick={() => setStarterReplace(v)} className={`rounded-lg px-3 py-2 font-semibold ${starterReplace === v ? "bg-emerald-500/40 ring-1 ring-emerald-300" : "bg-white/10 hover:bg-white/20"}`}>{label}</button>
+                  ))}
+                </div>
+              )}
+              <p className="mt-2 text-[11px] text-white/50">You can undo it with Ctrl+Z.</p>
+              <div className="mt-4 flex gap-2">
+                <button onClick={() => setShowStarter(false)} disabled={building} className="flex-1 rounded-xl bg-white/10 py-2.5 text-sm hover:bg-white/20">Cancel</button>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={buildStarterTown} disabled={building}
+                  className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 py-2.5 text-sm font-semibold">
+                  {building ? <><motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}>⚙️</motion.span> Laying out…</> : "Build it"}
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {report !== false && plan && plan.boundary && (
