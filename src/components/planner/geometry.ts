@@ -174,8 +174,13 @@ export function closestOnSegment(p: P, a: P, b: P): { pt: P; t: number; dist: nu
 export function addRoadToNetwork(roads: Road[], road: Road): Road[] {
   const all = [...roads.map((r) => ({ ...r, pts: r.pts.map((p) => [...p] as P) })), { ...road, pts: road.pts.map((p) => [...p] as P) }];
   const nw = all[all.length - 1];
+  const box = (pts: P[]) => pts.reduce((m, [x, z]) => [Math.min(m[0], x), Math.min(m[1], z), Math.max(m[2], x), Math.max(m[3], z)], [Infinity, Infinity, -Infinity, -Infinity]);
+  const nb = box(nw.pts);
 
   for (const other of all.slice(0, -1)) {
+    // Skip roads nowhere near this one (keeps big generated towns fast)
+    const ob = box(other.pts);
+    if (ob[0] > nb[2] + 2 || ob[2] < nb[0] - 2 || ob[1] > nb[3] + 2 || ob[3] < nb[1] - 2) continue;
     // 1. Crossings
     for (let guard = 0; guard < 100; guard++) {
       let hit: { i: number; j: number; p: P } | null = null;

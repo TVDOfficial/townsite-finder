@@ -25,7 +25,8 @@ import Report from "./Report";
 import type { BoundaryHandle } from "./Boundary";
 import SimPanel from "./SimPanel";
 import { capacityOf, newSim, step, takeLoan, type LogEntry } from "./sim";
-import { blockLayout, fits, frameOf, toLocal, townLayout, type Layout, type LotFill } from "./layout";
+import { blockLayout, fits, frameOf, toLocal, type Layout, type LotFill } from "./layout";
+import { townPlan } from "./townplan";
 import { BudgetPanel, ItemCard, JunctionCard, PaletteCard, RoadCard, TownsMenu, type Period, type Totals } from "./Panels";
 import Scene, { type Tool } from "./Scene";
 import { deleteTown, exportFile, findTownAt, importFile, listTowns, loadTown, newId, readShareHash, saveTown, shareLink, type PlanData, type TownMeta } from "./storage";
@@ -512,7 +513,7 @@ export default function Planner() {
     setBuilding(true);
     // Let the button show its busy state before the (synchronous) layout runs.
     setTimeout(() => {
-      const lay = townLayout(terrain, plan.boundary, plan.size, starterReplace ? [] : placed);
+      const lay = townPlan(terrain, plan.boundary, plan.size, starterReplace ? [] : placed);
       const n = applyLayout(lay, starterReplace, [plan.boundary?.cx ?? 0, plan.boundary?.cz ?? 0]);
       setBuilding(false);
       setShowStarter(false);
@@ -532,7 +533,7 @@ export default function Planner() {
   /** A random town with everything a town of this size needs. Replaces what's there. */
   const autoTown = (restartSim: boolean) => {
     if (!terrain || !plan) return;
-    const lay = townLayout(terrain, plan.boundary, plan.size, [], Math.random);
+    const lay = townPlan(terrain, plan.boundary, plan.size, [], Math.random);
     const n = applyLayout(lay, true, [plan.boundary?.cx ?? 0, plan.boundary?.cz ?? 0]);
     if (restartSim) setPlan((p) => p && { ...p, sim: newSim(p.sim?.startBudget ?? 25_000_000) });
     flash(`New random town: ${n} buildings for about ${lay.people.toLocaleString()} people`, "good");
@@ -896,8 +897,9 @@ export default function Planner() {
               <div className="text-3xl">✨</div>
               <div className="mt-1 text-lg font-semibold">Lay out a starter town</div>
               <p className="mt-1 text-sm text-white/65">
-                Builds a street grid with a main street, house lots, townhouses and apartments, a town centre, a school,
-                sport, industry and enough water, power and sewage for everyone. It&apos;s lined up with your town boundary.
+                Plans a real town in districts: a Main Street shopping strip and town square, a civic precinct, a school and
+                sports precinct, curving neighbourhoods with parks and courts, an industrial estate past a tree buffer, and a
+                utilities district with enough water, power and sewage for everyone.
               </p>
               <div className="mt-3 rounded-xl bg-white/5 p-3 text-sm">
                 Size: <b>{goal.label}</b> <span className="text-white/55">({goal.peopleRange})</span>
