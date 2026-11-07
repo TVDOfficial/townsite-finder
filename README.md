@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Townsite
 
-## Getting Started
+Find a random spot in Australia that's well away from existing towns, see what it would take to build a town there, then plan it in 3D.
 
-First, run the development server:
+## Features
+
+- **Finder** (`/`): pick a state and a minimum distance from towns, then hit *Find me a spot*. Rejected points flash on the map before it flies to the winner.
+- **Spot details**: terrain and slope map, water nearby, roads, power lines, nearest town, city and hospital, climate, photos, an estimated land type and price, native title, a difficulty score, and step-by-step guides for buying the land and building a town.
+- **Share links**: every spot has its own URL (`/?lat=…&lng=…&size=…`).
+- **Google Earth and Google Maps buttons** for every spot.
+- **Town planner** (`/plan`): about 7 × 7 km of real terrain with the satellite photo draped over it. Place buildings and roads, see running costs, earthworks, housing capacity and town needs. Plans are saved in your browser.
+- **Walk and fly**: *Walk around*, then WASD to move, F to fly, Shift for super speed.
+
+## Run it
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm install` also copies MapLibre's tile worker into `public/maplibre/` (the `postinstall` script).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Data
 
-## Learn More
+Bundled in `src/data/`, refreshed with `npm run build-data` (or `npm run build-data -- power` for one part):
 
-To learn more about Next.js, take a look at the following resources:
+| File | Source |
+|---|---|
+| `au-states.json` | Natural Earth 1:50m |
+| `settlements.json`, `hospitals.json`, `power-lines.json` | OpenStreetMap via Overpass |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Fetched live, per spot:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| What | Source |
+|---|---|
+| Parks and reserves | CAPAD 2024 (DCCEEW ArcGIS service) |
+| Native title | National Native Title Tribunal ArcGIS service |
+| Elevation | Open-Meteo (Copernicus 90 m) in the finder; AWS Terrain Tiles in the planner |
+| Climate (2015–2024) | Open-Meteo ERA5 archive |
+| Water, roads, rail, airfields | OpenFreeMap vector tiles |
+| Council name | OpenStreetMap via Overpass (often busy; skipped after 6 s) |
+| Photos | Wikimedia Commons (+ Mapillary if `MAPILLARY_TOKEN` is set) |
+| Satellite imagery | Esri World Imagery |
 
-## Deploy on Vercel
+No API keys are needed. Optionally set `MAPILLARY_TOKEN` for more street-level photos.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+API responses send `Cache-Control: s-maxage` headers so Vercel's CDN caches each spot.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Limitations
+
+- Land type is a rule-based guess from state, rainfall and location. ABARES' national land tenure service is offline, so check the real parcel with the state viewer the app links to. Live state lookups are planned.
+- Prices and build costs are rough ranges for curiosity, not quotes or advice.
+- Post-processing (ambient occlusion, bloom) is disabled because `@react-three/postprocessing` and drei's `<Environment>` don't work with three r187.

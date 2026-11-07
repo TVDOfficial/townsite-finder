@@ -93,8 +93,50 @@ out center;`;
   await writeFile(new URL("hospitals.json", OUT), JSON.stringify(rows));
 }
 
+async function powerLines() {
+  console.log("Downloading power lines (large, can take several minutes)…");
+  // Download in 6° squares so each request stays small enough for the public servers.
+  const elements = new Map();
+  for (let w = 112; w < 154; w += 6) {
+    for (let s = -44; s < -10; s += 6) {
+      const q = `[out:json][timeout:300];way["power"="line"](${s},${w},${s + 6},${w + 6});out tags geom;`;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const json = JSON.parse(await overpass(q));
+          json.elements.forEach((el) => elements.set(el.id, el));
+          console.log(`  square ${w},${s}: ${json.elements.length} lines (total ${elements.size})`);
+          break;
+        } catch (e) {
+          console.warn(`  square ${w},${s} attempt ${attempt} failed`);
+          await new Promise((r) => setTimeout(r, 15000 * attempt));
+        }
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  // Each line: [kV, lon1, lat1, lon2, lat2, …] rounded to ~100 m, consecutive duplicates removed.
+  const lines = [];
+  for (const el of elements.values()) {
+    if (!el.geometry) continue;
+    const kv = Math.round(Number((el.tags?.voltage ?? "0").split(";")[0]) / 1000) || 0;
+    const flat = [kv];
+    let px, py;
+    for (const { lon, lat } of el.geometry) {
+      const x = round(lon), y = round(lat);
+      if (x === px && y === py) continue;
+      flat.push(x, y);
+      px = x; py = y;
+    }
+    if (flat.length >= 5) lines.push(flat);
+  }
+  console.log(`  ${lines.length} power lines`);
+  await writeFile(new URL("power-lines.json", OUT), JSON.stringify(lines));
+}
+
 await mkdir(OUT, { recursive: true });
-await states();
-await settlements();
-await hospitals();
+const only = process.argv[2];
+if (!only || only === "states") await states();
+if (!only || only === "settlements") await settlements();
+if (!only || only === "hospitals") await hospitals();
+if (!only || only === "power") await powerLines();
 console.log("Done.");
