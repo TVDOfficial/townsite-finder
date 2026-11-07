@@ -72,11 +72,20 @@ export interface Parcel {
   outline: LngLat[][];
 }
 
+export interface BuildingPoint {
+  lng: number;
+  lat: number;
+  km: number;
+  areaM2: number;
+  kind: string; // best guess, e.g. "House or shed"
+  source: string;
+}
+
 export interface Buildings {
   within1km: number;
   within3km: number;
-  nearest: { km: number; lng: number; lat: number } | null;
-  points: LngLat[];
+  nearest: BuildingPoint | null;
+  points: BuildingPoint[];
 }
 
 export interface NearFeature {

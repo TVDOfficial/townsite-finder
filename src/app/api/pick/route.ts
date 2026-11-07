@@ -8,7 +8,7 @@ import { STATE_NAMES, type PickResult, type RejectedPoint, type StateCode } from
 
 export const maxDuration = 60;
 
-const MAX_AREA_CHECKS = 12;
+const MAX_AREA_CHECKS = 40;
 const MAX_REJECTED = 70;
 
 export async function GET(req: NextRequest) {
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     const result = await findEasiest(state, minKm, maxType, size in SIZES ? size : "small", buildingKm);
     if (result) return Response.json(result);
     return Response.json(
-      { error: `No buildable spot found ${minKm} km from every town in ${state === "ALL" ? "Australia" : STATE_NAMES[state]}. Try a smaller distance.`, rejected: [] },
+      { error: `No spot found ${minKm} km from every town${avoidBuildings ? ` and ${buildingKm} km from any building` : ""} in ${state === "ALL" ? "Australia" : STATE_NAMES[state]}. Try smaller distances or another state.`, rejected: [] },
       { status: 404 },
     );
   }
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   let tried = 0;
   const started = Date.now();
 
-  while (tried < 50000 && Date.now() - started < 25000) {
+  while (tried < 200000 && Date.now() - started < 45000) {
     tried++;
     const r = randomPointIn(state);
     if (!r) break;
@@ -55,10 +55,9 @@ export async function GET(req: NextRequest) {
     }
 
     const result: PickResult = { lng, lat, state: r.state, rejected, tried };
-    if (areaChecks >= MAX_AREA_CHECKS) {
-      result.warning = avoidBuildings
-        ? "Couldn't quickly find a spot clear of parks and buildings, so this one may have buildings or a reserve nearby."
-        : "Couldn't find a spot outside parks and reserves quickly, so this one may be inside one.";
+    if (areaChecks >= MAX_AREA_CHECKS || Date.now() - started > 40000) {
+      if (avoidBuildings) break; // never return a spot that wasn't confirmed clear of buildings
+      result.warning = "Couldn't find a spot outside parks and reserves quickly, so this one may be inside one.";
       return Response.json(result);
     }
     areaChecks++;
@@ -75,12 +74,15 @@ export async function GET(req: NextRequest) {
       continue;
     }
     if (pa === undefined) result.warning = "The parks and reserves check didn't respond, so this spot wasn't checked against them.";
-    else if (bld === undefined) result.warning = "The buildings check didn't respond, so there may be houses nearby.";
+    if (bld === undefined) {
+      rejected.push({ lng, lat, reason: "building", label: "Couldn't check for buildings" });
+      continue;
+    }
     return Response.json(result);
   }
 
   return Response.json(
-    { error: `No spot found ${minKm} km from every town in ${state === "ALL" ? "Australia" : STATE_NAMES[state]}. Try a smaller distance.`, rejected },
+    { error: `No spot found ${minKm} km from every town${avoidBuildings ? ` and ${buildingKm} km from any building` : ""} in ${state === "ALL" ? "Australia" : STATE_NAMES[state]} in time. Try smaller distances or another state.`, rejected },
     { status: 404 },
   );
 }

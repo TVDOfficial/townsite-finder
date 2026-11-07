@@ -183,7 +183,10 @@ export default function DetailsPanel({ details: d, nearby, nearbyLoading, sizeKe
               nearby.buildings.nearest ? (
                 <span>
                   <b>{nearby.buildings.within3km}</b> building{nearby.buildings.within3km === 1 ? "" : "s"} within 3 km · nearest <b>{km(nearby.buildings.nearest.km)}</b> away
-                  <span className="block text-xs text-muted">Probably a homestead, shed or farm workers&apos; house (white dots on the map). Detected from satellite imagery.</span>
+                  <span className="block text-xs text-muted">
+                    Nearest looks like a {nearby.buildings.nearest.kind.toLowerCase()} (about {nearby.buildings.nearest.areaM2.toLocaleString()} m²). White dots on the map; hover one to see what it probably is.
+                    Detected by AI from satellite images, so a few may be tanks or false positives.
+                  </span>
                 </span>
               ) : <span className="text-muted">No buildings detected within 3 km.</span>
             ) : <span className="text-muted">Couldn&apos;t check for buildings.</span>}

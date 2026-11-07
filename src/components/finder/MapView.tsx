@@ -130,6 +130,19 @@ export default function MapView({ rejected, spot, details, nearby, size, terrain
       map.on("touchstart", stopSpin);
       map.on("wheel", stopSpin);
       await new Promise<void>((r) => (map.loaded() ? r() : map.once("load", () => r())));
+      // Hover a building dot to see what it probably is.
+      const tip = new ml.Popup({ closeButton: false, closeOnClick: false, offset: 10, className: "building-tip" });
+      map.on("mouseenter", "buildings", (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        const f = e.features?.[0];
+        if (!f) return;
+        const pr = f.properties as { kind: string; area: number; km: number; source: string };
+        const km = pr.km < 1 ? `${Math.round(pr.km * 1000)} m` : `${pr.km.toFixed(1)} km`;
+        tip.setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
+          .setHTML(`<b>${pr.kind}</b><br/>Roof area about ${Math.round(pr.area).toLocaleString()} m² · ${km} from the spot<br/><span style="opacity:.65">${pr.source}</span>`)
+          .addTo(map);
+      });
+      map.on("mouseleave", "buildings", () => { map.getCanvas().style.cursor = ""; tip.remove(); });
       return map;
     })();
     return () => {
@@ -221,7 +234,16 @@ export default function MapView({ rejected, spot, details, nearby, size, terrain
       );
       const pts = nearby?.buildings?.points ?? [];
       (map.getSource("buildings") as GeoJSONSource).setData(
-        spot ? { type: "FeatureCollection", features: pts.map((p) => ({ type: "Feature" as const, properties: {}, geometry: { type: "Point" as const, coordinates: p } })) } : empty,
+        spot
+          ? {
+              type: "FeatureCollection",
+              features: pts.map((b) => ({
+                type: "Feature" as const,
+                properties: { kind: b.kind, area: b.areaM2, km: b.km, source: b.source },
+                geometry: { type: "Point" as const, coordinates: [b.lng, b.lat] },
+              })),
+            }
+          : empty,
       );
     }).catch(() => {});
   }, [spot, details, nearby]);

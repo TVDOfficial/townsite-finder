@@ -208,3 +208,14 @@ input[type="range"].slider::-moz-range-thumb {
   .report-page { break-after: page; }
   .report-page:last-child { break-after: auto; }
 }
+
+/* Building hover tooltip on the finder map */
+.building-tip .maplibregl-popup-content {
+  font: 12px/1.45 var(--font-geist-sans), system-ui, sans-serif;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(17, 17, 17, 0.9);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.building-tip .maplibregl-popup-tip { border-top-color: rgba(17, 17, 17, 0.9); border-bottom-color: rgba(17, 17, 17, 0.9); }

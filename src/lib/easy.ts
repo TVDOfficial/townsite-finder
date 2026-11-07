@@ -72,27 +72,59 @@ export async function findEasiest(state: StateCode | "ALL", minKm: number, maxTy
   let tried = 0;
 
   // 1. Random spots far enough from towns, pre-ranked by things we already know locally.
-  const pool: { p: LngLat; state: StateCode; pre: number; power?: ReturnType<typeof nearestPowerLine> }[] = [];
-  while (pool.length < CANDIDATES && tried < 60000 && Date.now() - started < 12000) {
-    tried++;
-    const r = randomPointIn(state);
-    if (!r) break;
-    const near = settlementWithin(r.p, minKm, maxType);
-    if (near) {
-      if (rejected.length < 50 && tried % 3 === 0) rejected.push({ lng: r.p[0], lat: r.p[1], reason: "near-town", label: near });
-      continue;
+  type Cand = { p: LngLat; state: StateCode; pre: number; power?: ReturnType<typeof nearestPowerLine> };
+  const gen = (n: number, budgetMs: number): Cand[] => {
+    const out: Cand[] = [];
+    const until = Date.now() + budgetMs;
+    while (out.length < n && tried < 200000 && Date.now() < until) {
+      tried++;
+      const r = randomPointIn(state);
+      if (!r) break;
+      const near = settlementWithin(r.p, minKm, maxType);
+      if (near) {
+        if (rejected.length < 50 && tried % 3 === 0) rejected.push({ lng: r.p[0], lat: r.p[1], reason: "near-town", label: near });
+        continue;
+      }
+      const power = nearestPowerLine(r.p);
+      const pre =
+        band(power?.km ?? 200, [[5, 5], [15, 20], [40, 45], [80, 70]], 90) +
+        band(nearestHospital(r.p)?.km ?? 300, [[40, 5], [80, 25], [150, 50]], 80) +
+        band(nearestMajorCity(r.p).km, [[150, 0], [300, 20], [600, 40]], 60);
+      out.push({ p: r.p, state: r.state, pre, power });
     }
-    const power = nearestPowerLine(r.p);
-    const pre =
-      band(power?.km ?? 200, [[5, 5], [15, 20], [40, 45], [80, 70]], 90) +
-      band(nearestHospital(r.p)?.km ?? 300, [[40, 5], [80, 25], [150, 50]], 80) +
-      band(nearestMajorCity(r.p).km, [[150, 0], [300, 20], [600, 40]], 60);
-    pool.push({ p: r.p, state: r.state, pre, power });
-  }
+    return out.sort((a, b) => a.pre - b.pre);
+  };
+
+  const pool = gen(CANDIDATES, 12000);
   if (!pool.length) return null;
-  pool.sort((a, b) => a.pre - b.pre);
-  const shortlist = pool.slice(0, SHORTLIST);
-  pool.slice(SHORTLIST).forEach((c) => rejected.push({ lng: c.p[0], lat: c.p[1], reason: "harder", label: "Far from services" }));
+  let shortlist: Cand[];
+
+  if (!avoidBuildings) {
+    shortlist = pool.slice(0, SHORTLIST);
+    pool.slice(SHORTLIST).forEach((c) => rejected.push({ lng: c.p[0], lat: c.p[1], reason: "harder", label: "Far from services" }));
+  } else {
+    // Only spots with no building inside the chosen distance go any further. Check the most
+    // promising first, in small parallel batches, and fetch more candidates if we run out.
+    shortlist = [];
+    let queue = [...pool];
+    while (shortlist.length < SHORTLIST && Date.now() - started < 38000) {
+      if (!queue.length) {
+        const more = gen(CANDIDATES, 4000);
+        if (!more.length) break;
+        pool.push(...more);
+        queue = more;
+      }
+      const batch = queue.splice(0, 8);
+      const results = await Promise.all(batch.map((c) => hasBuildingWithin(c.p[0], c.p[1], buildingKm).catch(() => ({ found: true, km: undefined }))));
+      batch.forEach((c, i) => {
+        const r = results[i];
+        if (r.found) rejected.push({ lng: c.p[0], lat: c.p[1], reason: "building", label: r.km != null ? `Building ${r.km.toFixed(1)} km away` : "Couldn't check for buildings" });
+        else shortlist.push(c);
+      });
+    }
+    queue.forEach((c) => rejected.push({ lng: c.p[0], lat: c.p[1], reason: "harder", label: "Not checked" }));
+    if (!shortlist.length) return null;
+  }
 
   // 2. Rainfall, slope and parks for the shortlist.
   const pts = shortlist.map((c) => c.p);
@@ -115,31 +147,22 @@ export async function findEasiest(state: StateCode | "ALL", minKm: number, maxTy
   scored.sort((a, b) => a.score - b.score);
 
   // 3. Water, main roads and native title for the finalists, then the full difficulty score.
-  let finalists = scored.filter((s) => !s.d.protectedArea).slice(0, FINALISTS + (avoidBuildings ? 3 : 0));
+  const finalists = scored.filter((s) => !s.d.protectedArea).slice(0, FINALISTS);
   scored.filter((s) => !finalists.includes(s)).forEach((s) =>
     rejected.push({ lng: s.c.p[0], lat: s.c.p[1], reason: s.d.protectedArea ? (s.d.protectedArea.indigenous ? "aboriginal" : "protected") : "harder", label: s.d.protectedArea?.name ?? `Score ${s.score}` }),
   );
   if (!finalists.length) return null;
 
-  const withBuildings = new Set<typeof finalists[number]>();
   await Promise.all(finalists.map(async (f) => {
-    const [tiles, title, bld] = await Promise.all([
+    const [tiles, title] = await Promise.all([
       nearbyFromTiles(f.c.p[0], f.c.p[1], true).catch(() => null),
       nativeTitleAt(f.c.p[0], f.c.p[1]).catch(() => null),
-      avoidBuildings ? hasBuildingWithin(f.c.p[0], f.c.p[1], buildingKm).catch(() => null) : Promise.resolve(null),
     ]);
-    if (bld?.found) withBuildings.add(f);
     if (tiles) f.nearby = { ...f.nearby, water: tiles.water, infrastructure: { ...tiles.infrastructure, powerLine: f.c.power } };
     f.d.nativeTitle = title;
     f.score = difficulty(f.d, f.nearby, estimateTenure(f.d, f.nearby), size).total;
   }));
   finalists.sort((a, b) => a.score - b.score);
-  // Drop spots with farmhouses or sheds too close (unless every finalist has some).
-  if (withBuildings.size && withBuildings.size < finalists.length) {
-    finalists.filter((f) => withBuildings.has(f)).forEach((f) => rejected.push({ lng: f.c.p[0], lat: f.c.p[1], reason: "building", label: `Buildings within ${buildingKm} km` }));
-    finalists = finalists.filter((f) => !withBuildings.has(f));
-  }
-
   const [best, ...rest] = finalists;
   rest.forEach((s) => rejected.push({ lng: s.c.p[0], lat: s.c.p[1], reason: "alternative", label: `Score ${s.score}` }));
   const nearName = (p: LngLat) => nearestPlaces(p, 1)[0]?.name ?? "the outback";
