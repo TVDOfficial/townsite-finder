@@ -193,6 +193,11 @@ export default function DetailsPanel({ details: d, nearby, nearbyLoading, sizeKe
                 </span>
               ) : <span className="text-muted">No buildings detected within 3 km.</span>
             ) : <span className="text-muted">Couldn&apos;t check for buildings.</span>}
+            {!nearbyLoading && nearby?.buildings && nearby.buildings.ignored > 0 && (
+              <span className="mt-1 block text-xs text-muted">
+                {nearby.buildings.ignored} lone AI detection{nearby.buildings.ignored === 1 ? "" : "s"} ignored (faded dots). With no other buildings nearby they&apos;re usually rocks or shadows.
+              </span>
+            )}
           </div>
         </div>
 

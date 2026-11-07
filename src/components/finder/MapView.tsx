@@ -47,7 +47,12 @@ const STYLE: StyleSpecification = {
     { id: "parcel-line", type: "line", source: "parcel", paint: { "line-color": "#fb923c", "line-width": 2.5 } },
     {
       id: "buildings", type: "circle", source: "buildings",
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 6], "circle-color": "#ffffff", "circle-stroke-color": "#111", "circle-stroke-width": 1.5 },
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 6],
+        "circle-color": ["case", ["get", "likelyFalse"], "rgba(255,255,255,0)", "#ffffff"],
+        "circle-stroke-color": ["case", ["get", "likelyFalse"], "rgba(255,255,255,0.55)", "#111"],
+        "circle-stroke-width": 1.5,
+      },
     },
     { id: "land-fill", type: "fill", source: "land", paint: { "fill-color": "#2ccf93", "fill-opacity": 0.14 } },
     { id: "land-line", type: "line", source: "land", paint: { "line-color": "#2ccf93", "line-width": 2.5, "line-dasharray": [2, 1.5] } },
@@ -136,10 +141,13 @@ export default function MapView({ rejected, spot, details, nearby, size, terrain
         map.getCanvas().style.cursor = "pointer";
         const f = e.features?.[0];
         if (!f) return;
-        const pr = f.properties as { kind: string; area: number; km: number; source: string };
+        const pr = f.properties as { kind: string; area: number; km: number; source: string; likelyFalse: boolean | string };
         const km = pr.km < 1 ? `${Math.round(pr.km * 1000)} m` : `${pr.km.toFixed(1)} km`;
+        const fake = pr.likelyFalse === true || pr.likelyFalse === "true";
         tip.setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
-          .setHTML(`<b>${pr.kind}</b><br/>Roof area about ${Math.round(pr.area).toLocaleString()} m² · ${km} from the spot<br/><span style="opacity:.65">${pr.source}</span>`)
+          .setHTML(fake
+            ? `<b>Possible false detection</b><br/>A lone AI detection with no other buildings within 300 m.<br/>Often rocks, shadows or a creek bed, so it isn't counted.<br/><span style="opacity:.65">${km} from the spot</span>`
+            : `<b>${pr.kind}</b><br/>Roof area about ${Math.round(pr.area).toLocaleString()} m² · ${km} from the spot<br/><span style="opacity:.65">${pr.source}</span>`)
           .addTo(map);
       });
       map.on("mouseleave", "buildings", () => { map.getCanvas().style.cursor = ""; tip.remove(); });
@@ -239,7 +247,7 @@ export default function MapView({ rejected, spot, details, nearby, size, terrain
               type: "FeatureCollection",
               features: pts.map((b) => ({
                 type: "Feature" as const,
-                properties: { kind: b.kind, area: b.areaM2, km: b.km, source: b.source },
+                properties: { kind: b.kind, area: b.areaM2, km: b.km, source: b.source, likelyFalse: !!b.likelyFalse },
                 geometry: { type: "Point" as const, coordinates: [b.lng, b.lat] },
               })),
             }

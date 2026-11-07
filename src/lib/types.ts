@@ -79,12 +79,14 @@ export interface BuildingPoint {
   areaM2: number;
   kind: string; // best guess, e.g. "House or shed"
   source: string;
+  likelyFalse?: boolean; // lone AI detection with nothing else nearby
 }
 
 export interface Buildings {
   within1km: number;
   within3km: number;
   nearest: BuildingPoint | null;
+  ignored: number; // lone AI detections not counted
   points: BuildingPoint[];
 }
 

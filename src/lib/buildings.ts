@@ -13,6 +13,11 @@ const FALLBACK_RELEASE = "2026-10-21.0";
 const MIN_AREA_M2 = 20;
 /** Full-detail tiles are used out to this distance; beyond it, zoom-13 tiles (which drop some small sheds). */
 const DETAIL_KM = 4;
+/**
+ * Real rural buildings come in groups (house + sheds + tanks). An AI detection with no other
+ * building within this distance is treated as a likely false positive (rocks, shadows, creek beds).
+ */
+const CLUSTER_M = 300;
 
 let source: Promise<PMTiles> | null = null;
 let sourceAt = 0;
@@ -32,13 +37,14 @@ function getSource() {
   // Re-check for a newer monthly release once a day.
   if (!source || Date.now() - sourceAt > 86_400_000) {
     sourceAt = Date.now();
+    tileCache.clear();
     source = latestRelease().then((r) => new PMTiles(`${BUCKET}/tiles/${r}/buildings.pmtiles`));
   }
   return source;
 }
 
 // ---------- Footprints ----------
-interface Footprint { c: LngLat; areaM2: number; kind: string; source: string }
+interface Footprint { c: LngLat; areaM2: number; kind: string; source: string; ml: boolean }
 
 /** A best guess at what a footprint is, from its tags (when mapped by people) or its size. */
 function classify(areaM2: number, props: Record<string, unknown>): string {
@@ -63,23 +69,36 @@ function footprintOf(f: VectorTileFeature, x: number, y: number, z: number): Foo
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += (ring[j][0] - c[0]) * kx * (ring[i][1] - c[1]) * ky - (ring[i][0] - c[0]) * kx * (ring[j][1] - c[1]) * ky;
   const areaM2 = Math.abs(a / 2);
   const src = String(f.properties["@geometry_source"] ?? "");
+  const ml = /microsoft|google|esri|ml buildings/i.test(src);
   return {
-    c, areaM2, kind: classify(areaM2, f.properties),
-    source: /microsoft/i.test(src) ? "Detected by Microsoft AI from satellite imagery" : src ? `Mapped by ${src}` : "Overture Maps",
+    c, areaM2, kind: classify(areaM2, f.properties), ml,
+    source: ml ? "Detected by AI from satellite imagery" : src ? `Mapped by ${src}` : "Overture Maps",
   };
 }
 
-async function footprintsInTile(pm: PMTiles, z: number, x: number, y: number): Promise<Footprint[]> {
-  const tile = await pm.getZxy(z, x, y, AbortSignal.timeout(8000));
-  if (!tile) return [];
-  const layer = new VectorTile(new PbfReader(new Uint8Array(tile.data))).layers.building;
-  if (!layer) return [];
-  const out: Footprint[] = [];
-  for (let k = 0; k < layer.length; k++) {
-    const fp = footprintOf(layer.feature(k), x, y, z);
-    if (fp && fp.areaM2 >= MIN_AREA_M2) out.push(fp);
+// Small per-instance cache so neighbouring checks don't refetch the same tiles.
+const tileCache = new Map<string, Promise<Footprint[]>>();
+
+function footprintsInTile(pm: PMTiles, z: number, x: number, y: number): Promise<Footprint[]> {
+  const key = `${z}/${x}/${y}`;
+  let hit = tileCache.get(key);
+  if (!hit) {
+    hit = (async () => {
+      const tile = await pm.getZxy(z, x, y, AbortSignal.timeout(8000));
+      if (!tile) return [];
+      const layer = new VectorTile(new PbfReader(new Uint8Array(tile.data))).layers.building;
+      if (!layer) return [];
+      const out: Footprint[] = [];
+      for (let k = 0; k < layer.length; k++) {
+        const fp = footprintOf(layer.feature(k), x, y, z);
+        if (fp && fp.areaM2 >= MIN_AREA_M2) out.push(fp);
+      }
+      return out;
+    })().catch((e) => { tileCache.delete(key); throw e; });
+    tileCache.set(key, hit);
+    if (tileCache.size > 600) tileCache.delete(tileCache.keys().next().value!);
   }
-  return out;
+  return hit;
 }
 
 function tileGrid(lng: number, lat: number, z: number) {
@@ -92,7 +111,16 @@ function tileGrid(lng: number, lat: number, z: number) {
   };
 }
 
-/** Search outward ring by ring at one zoom level; returns the nearest building within maxKm, if any. */
+/** Mapped buildings always count; AI detections only count when another building is nearby. */
+async function isConfirmed(pm: PMTiles, fp: Footprint): Promise<boolean> {
+  if (!fp.ml) return true;
+  const { cx, cy } = tileGrid(fp.c[0], fp.c[1], 14);
+  const lists = await Promise.all([-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => footprintsInTile(pm, 14, cx + dx, cy + dy).catch(() => []))));
+  const limitKm = CLUSTER_M / 1000;
+  return lists.flat().some((o) => o !== fp && haversineKm(fp.c, o.c) > 0.002 && haversineKm(fp.c, o.c) <= limitKm);
+}
+
+/** Search outward ring by ring at one zoom level; returns the nearest confirmed building within maxKm, if any. */
 async function searchRings(pm: PMTiles, p: LngLat, z: number, fromKm: number, maxKm: number): Promise<number | null> {
   const { cx, cy, tileKm } = tileGrid(p[0], p[1], z);
   const first = Math.max(0, Math.floor(fromKm / tileKm) - 1);
@@ -102,20 +130,23 @@ async function searchRings(pm: PMTiles, p: LngLat, z: number, fromKm: number, ma
     for (let dx = -ring; dx <= ring; dx++)
       for (let dy = -ring; dy <= ring; dy++)
         if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) cells.push([cx + dx, cy + dy]);
-    let nearest = Infinity;
+    const found: { fp: Footprint; km: number }[] = [];
     for (let i = 0; i < cells.length; i += 100) {
       const lists = await Promise.all(cells.slice(i, i + 100).map(([x, y]) => footprintsInTile(pm, z, x, y)));
-      for (const fp of lists.flat()) nearest = Math.min(nearest, haversineKm(p, fp.c));
+      for (const fp of lists.flat()) {
+        const km = haversineKm(p, fp.c);
+        if (km <= maxKm) found.push({ fp, km });
+      }
     }
-    if (nearest <= maxKm) return nearest;
+    found.sort((a, b) => a.km - b.km);
+    for (const f of found) if (await isConfirmed(pm, f.fp)) return f.km;
   }
   return null;
 }
 
 /**
- * Is there any building within `km` of the point? Always uses full-detail tiles for the
- * nearest 4 km, then coarser tiles further out. Stops at the first hit, so busy farmland
- * is rejected quickly.
+ * Is there any (confirmed) building within `km` of the point? Always uses full-detail tiles
+ * for the nearest 4 km, then coarser tiles further out. Stops at the first hit.
  */
 export async function hasBuildingWithin(lng: number, lat: number, km: number): Promise<{ found: boolean; km?: number }> {
   const pm = await getSource();
@@ -136,16 +167,22 @@ export async function buildingsNear(lng: number, lat: number, radiusKm = 3): Pro
   const p: LngLat = [lng, lat];
   const lists = await Promise.all([-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => footprintsInTile(pm, 14, cx + dx, cy + dy))));
   const found = lists.flat()
-    .map((fp) => ({ ...fp, km: haversineKm(p, fp.c) }))
-    .filter((fp) => fp.km <= radiusKm)
-    .sort((a, b) => a.km - b.km);
-  const point = (fp: (typeof found)[number]): BuildingPoint => ({
-    lng: +fp.c[0].toFixed(5), lat: +fp.c[1].toFixed(5), km: +fp.km.toFixed(2), areaM2: Math.round(fp.areaM2), kind: fp.kind, source: fp.source,
+    .map((fp) => ({ fp, km: haversineKm(p, fp.c) }))
+    .filter((f) => f.km <= radiusKm)
+    .sort((a, b) => a.km - b.km)
+    .slice(0, 250);
+  const confirmed = await Promise.all(found.map((f) => isConfirmed(pm, f.fp)));
+  const point = (f: (typeof found)[number], ok: boolean): BuildingPoint => ({
+    lng: +f.fp.c[0].toFixed(5), lat: +f.fp.c[1].toFixed(5), km: +f.km.toFixed(2), areaM2: Math.round(f.fp.areaM2),
+    kind: ok ? f.fp.kind : "Possible false detection", source: f.fp.source, ...(ok ? {} : { likelyFalse: true }),
   });
+  const points = found.map((f, i) => point(f, confirmed[i]));
+  const real = points.filter((b) => !b.likelyFalse);
   return {
-    within1km: found.filter((b) => b.km <= 1).length,
-    within3km: found.length,
-    nearest: found[0] ? point(found[0]) : null,
-    points: found.slice(0, 200).map(point),
+    within1km: real.filter((b) => b.km <= 1).length,
+    within3km: real.length,
+    nearest: real[0] ?? null,
+    ignored: points.length - real.length,
+    points: points.slice(0, 200),
   };
 }
